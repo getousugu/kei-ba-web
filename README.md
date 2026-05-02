@@ -1,73 +1,80 @@
-# React + TypeScript + Vite
+# けいーば (Keiba Web)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**マルチプレイヤー AI 競馬シミュレーションゲーム**
 
-Currently, two official plugins are available:
+Discord版で愛されたAI競馬ボット『けーば』が、最新のWebテクノロジーを纏ってフル移植されました。ブラウザだけで、リアルタイムなマルチプレイ対戦、奥深いステータスに基づいたレースシミュレーション、そしてAIによる臨場感あふれる実況を楽しむことができます。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 🌟 プロジェクト概要
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+「けいーば」は、プレイヤーが馬主や予想屋となり、AIが生成する個性豊かな競走馬たちのレースを観戦・ベットするゲームです。P2P通信（PeerJS）を利用しているため、サーバーを介さずプレイヤー同士が直接つながり、ラグの少ないリアルタイムな対戦を実現しています。
 
-## Expanding the ESLint configuration
+## 🚀 クイックスタート
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 1. 起動方法
+リポジトリをクローンした後、以下のコマンドでローカル開発環境を起動できます。
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2. 遊び方
+- **プロフィール設定**: ログイン画面で名前を入力。特定の「シークレットコード」を入力することで隠し称号を獲得できます。
+- **ルームの作成/参加**: ホストとしてルームを作成し、発行されたルームIDを友だちに共有して招待します。
+- **セットアップ**: レースの距離、馬場状態、天候などを設定し、出走馬を決定します。
+- **ベット**: 各馬のステータスやオッズを確認し、手持ちのコインを賭けます。
+- **レース観戦**: リアルタイムに進行するレース展開と実況を楽しみましょう！
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+---
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 🏇 レースの仕組み (Race Mechanics)
+
+「けいーば」のレースは、単なる乱数ではなく、複雑なパラメータと物理計算に基づいたシミュレーションによって決定されます。
+
+### 1. 競走馬のステータス
+各馬は以下の6つの基本能力を持っています：
+- **スピード**: 最高速度に影響。
+- **スタミナ**: 距離適性や道中の粘り強さに影響。
+- **パワー**: 馬場状態（重馬場など）や坂道での減速を抑える力。
+- **バースト**: 最終直線の末脚（スパート）の鋭さ。
+- **根性**: 競り合いになった際の粘り強さ。
+- **賢さ**: ペース配分や位置取りの良さ、アクシデントの回避率。
+
+### 2. 適性と状態
+- **距離適性**: 短距離、マイル、中距離、長距離の4段階。適性が低いとスタミナ消費が激しくなります。
+- **馬場適性**: 良、稍重、重、不良への対応力。
+- **やる気**: 「絶好調」から「絶不調」まで5段階。全ステータスに補正がかかります。
+
+### 3. 脚質 (Running Styles)
+- **逃げ**: スタートから先頭をキープ。ハイペースに強いが、終盤の失速リスクがある。
+- **先行**: 前方で安定した走り。バランスが良く、スローペースに強い。
+- **差し**: 中団に待機し、直線での逆転を狙う。
+- **追込**: 最後方から一気に抜き去る。バースト能力が最大限に発揮される。
+- **暴れ馬**: 極稀に現れる特殊な脚質。制御不能な加速や大失速を引き起こすが、爆発力は最大。
+
+### 4. シミュレーション・プロセス
+レースは以下の8段階のステージで計算されます：
+1. **スタート**（出遅れや好スタートの判定）
+2. **序盤**（位置取り争い）
+3. **中盤** / **3コーナー**（スタミナと賢さが重要）
+4. **最終コーナー**
+5. **直線前半** / **直線後半**（バーストと根性のぶつかり合い）
+6. **ゴール**
+
+**特徴的なシステム：**
+- **ペース判定**: 逃げ馬の数などにより「ハイ」「ミドル」「スロー」が決定され、各脚質の有利不利が変化します。
+- **ラバーバンド補正**: 後続の馬が極端に離されすぎないよう、適度な競り合いが発生する調整が行われています。
+- **動的実況**: レース展開（ハナ差の争い、大外からの猛追など）を検知し、AIがリアルタイムに日本語の熱い実況を生成します。
+
+---
+
+## 🛠 技術スタック
+- **Frontend**: React 19 / TypeScript / Tailwind CSS
+- **State**: Zustand (ゲーム状態管理)
+- **Real-time**: PeerJS (P2P通信)
+- **DB**: Dexie.js (ブラウザ内での戦績保存)
+- **Animation**: CSS Animations / Framer Motion
+
+## 📄 ライセンス
+このプロジェクトは個人利用・学習を目的として開発されています。
