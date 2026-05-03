@@ -28,6 +28,8 @@ export interface HorseData {
 
 export interface Bet {
   id: string;
+  playerId?: string;
+  playerName?: string;
   bet_type: string;
   horse_numbers: number[];
   amount: number;
@@ -72,18 +74,20 @@ export class OddsCalculator {
     return "長距離";
   }
 
-  calculateInitialOdds(horsesData: HorseData[]): HorseData[] {
+  calculateInitialOdds(horsesData: HorseData[], isRealOdds: boolean = false): HorseData[] {
     const scores = horsesData.map(hd => hd.score || 50.0);
     const totalScore = scores.reduce((sum, score) => sum + score, 0);
+
+    const multiplier = isRealOdds ? 0.8 : 1.2;
 
     horsesData.forEach((hd, i) => {
       let oddsWin = 99.9;
       if (scores[i] > 0) {
-        oddsWin = (totalScore / scores[i]) * 1.2;
+        oddsWin = (totalScore / scores[i]) * multiplier;
       }
       hd.odds_win = Math.max(1.1, Math.round(oddsWin * 10) / 10);
       hd.initial_odds_win = hd.odds_win;
-      hd.odds_place = Math.max(1.0, Math.round(hd.odds_win * 0.5 * 10) / 10);
+      hd.odds_place = Math.max(1.0, Math.round(hd.odds_win * (isRealOdds ? 0.3 : 0.5) * 10) / 10);
     });
 
     const sorted = [...horsesData].sort((a, b) => (a.odds_win || 99.9) - (b.odds_win || 99.9));

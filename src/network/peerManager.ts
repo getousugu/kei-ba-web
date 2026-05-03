@@ -249,25 +249,26 @@ export class PeerManager {
       case 'sync_full_state':
       case 'phase_start':
         console.log('[PeerManager] Processing atomic state update:', data.phase);
+        
+        // 1. Settings update (triggers coin logic if needed)
+        if (data.settings) {
+          store.setRoomSettings(data.settings);
+        }
+
+        // 2. Rest of state update
         useGameStore.setState((s) => {
           const isMidGame = (data.phase === 'betting' || data.phase === 'race');
           const shouldSpectate = data.type === 'sync_full_state' && isMidGame;
-          // Bug-16: ホストから resetCoins フラグが来た場合はコインをリセット
-          const myCoins = (data.resetCoins && s.role === 'guest') ? 10000 : s.myCoins;
-
-          // Imp-7: 次のレースが始まったら(phase === 'betting') 観戦者フラグをリセットする
           const isSpectator = data.phase === 'betting' ? false : (s.isSpectator || shouldSpectate);
 
           return {
             ...s,
-            ...(data.settings ? { roomSettings: { ...s.roomSettings, ...data.settings } } : {}),
             ...(data.horses ? { horses: data.horses } : {}),
             ...(data.raceData ? { raceData: data.raceData } : {}),
             ...(data.bettingEndTime ? { bettingEndTime: data.bettingEndTime } : {}),
             ...(data.raceStartTime ? { raceStartTime: data.raceStartTime } : {}),
             ...(data.participants ? { participants: data.participants } : {}),
             ...(data.phase ? { phase: data.phase } : {}),
-            myCoins,
             isSpectator
           };
         });

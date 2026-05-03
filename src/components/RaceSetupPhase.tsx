@@ -14,13 +14,14 @@ async function buildRace(
   distance: number,
   fieldCondition: string,
   weather: string,
+  isRealOdds: boolean = false,
 ) {
   const drawn = await drawHorsesFromPool(horseCount);
   const horses = drawn.map((h, i) => ({ ...h, horse_number: i + 1 }));
   horses.forEach(h => {
     (h as any).score = oddsCalculator.calculateCompositeScore(h, distance, fieldCondition, '平坦');
   });
-  return oddsCalculator.calculateInitialOdds(horses);
+  return oddsCalculator.calculateInitialOdds(horses, isRealOdds);
 }
 
 export default function RaceSetupPhase() {
@@ -29,11 +30,11 @@ export default function RaceSetupPhase() {
   const [loading, setLoading] = useState(false);
 
   const [cfg, setCfg] = useState({
-    horseCount: Math.min(18, Math.max(8, roomSettings.participantLimit || 12)),
-    distance: 'random',
-    fieldCondition: 'random',
-    weather: 'random',
-    bettingTime: 60,
+    horseCount: roomSettings.horseCount || 12,
+    distance: roomSettings.distance || 'random',
+    fieldCondition: roomSettings.fieldCondition || 'random',
+    weather: roomSettings.weather || 'random',
+    bettingTime: roomSettings.bettingTime || 60,
   });
 
   const resolveConfig = () => {
@@ -60,10 +61,22 @@ export default function RaceSetupPhase() {
     setLoading(true);
     try {
       const { distance, fieldCondition, weather } = resolveConfig();
-      const horsesWithOdds = await buildRace(cfg.horseCount, distance, fieldCondition, weather);
+      const horsesWithOdds = await buildRace(cfg.horseCount, distance, fieldCondition, weather, roomSettings.realOdds);
       const raceData = { distance, field_condition: fieldCondition, weather, course_feature: '平坦' };
 
-      const endTime = Date.now() + Math.max(10, cfg.bettingTime) * 1000;
+      const finalBettingTime = cfg.bettingTime || 120;
+      const endTime = Date.now() + Math.max(10, finalBettingTime) * 1000;
+
+      // 同条件再レースのために、選択された設定（'random'等を含む）を roomSettings に保存
+      const updatedSettings = {
+        ...roomSettings,
+        horseCount: cfg.horseCount,
+        distance: cfg.distance,
+        fieldCondition: cfg.fieldCondition,
+        weather: cfg.weather,
+        bettingTime: finalBettingTime,
+      };
+      useGameStore.getState().setRoomSettings(updatedSettings);
 
       // Broadcast FIRST
       peerManager.broadcast({
@@ -72,7 +85,7 @@ export default function RaceSetupPhase() {
         horses: horsesWithOdds,
         raceData,
         bettingEndTime: endTime,
-        roomSettings
+        roomSettings: updatedSettings
       });
 
       // Update local state SECOND
@@ -137,16 +150,31 @@ export default function RaceSetupPhase() {
               </div>
             </div>
 
-            <div className="panel rounded-xl overflow-hidden">
-              <div className="panel-header flex items-center justify-between">
+            <div className="panel rounded-xl overflow-hidden border border-[#2a2a32]">
+              <div className="panel-header flex items-center justify-between bg-[#202028] text-gray-300 font-black uppercase tracking-widest">
                 <span>馬券購入 受付時間 (秒)</span>
+                <div className="flex gap-1">
+                  {[30, 60, 120, 180].map(sec => (
+                    <button key={sec} onClick={() => setCfg({ ...cfg, bettingTime: sec })}
+                      className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${cfg.bettingTime === sec ? 'bg-indigo-600 text-white' : 'bg-black/20 text-gray-500 hover:text-gray-300'}`}>
+                      {sec}s
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="p-4">
-                <input type="number" min="10" max="300" value={cfg.bettingTime}
-                  onChange={e => setCfg({ ...cfg, bettingTime: parseInt(e.target.value) || 60 })}
-                  className="w-full bg-[#1c1c21] border border-[#2a2a32] rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-indigo-500 transition-all text-center"
-                  placeholder="例: 60"
-                />
+              <div className="p-4 bg-[#1a1a1e]">
+                <div className="relative">
+                  <input type="number" min="10" max="3600" value={cfg.bettingTime || ''}
+                    onFocus={e => e.target.select()}
+                    onChange={e => {
+                      const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                      setCfg({ ...cfg, bettingTime: isNaN(val) ? 0 : val });
+                    }}
+                    className="w-full bg-[#0e0e10] border border-[#2a2a32] rounded-lg px-10 py-2.5 text-lg font-mono font-black text-white focus:outline-none focus:border-indigo-500 transition-all text-center tabular-nums"
+                    placeholder="120"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-black text-[10px] uppercase pointer-events-none tracking-widest">SEC</div>
+                </div>
               </div>
             </div>
 
@@ -184,6 +212,24 @@ export default function RaceSetupPhase() {
                     {WEATHER_OPTIONS.map(w => <option key={w} value={w} className="bg-[#1a1a1e]">{w === 'random' ? 'おまかせ' : w}</option>)}
                   </select>
                 </div>
+              </div>
+            </div>
+
+            {/* --- Additional Options --- */}
+            <div className="panel rounded-xl overflow-hidden">
+              <div className="panel-header flex items-center justify-between">
+                <span>リアルオッズ (低倍率設定)</span>
+                <button 
+                  onClick={() => updateSetting('realOdds', !roomSettings.realOdds)}
+                  className={`w-12 h-6 rounded-full p-1 transition-colors ${roomSettings.realOdds ? 'bg-emerald-500' : 'bg-gray-700'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${roomSettings.realOdds ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <div className="px-4 pb-3">
+                <p className="text-[10px] text-gray-500">
+                  有効にすると、オッズの算出ロジックを現実に即したシビアなものに変更します。払戻金が少なくなりますが、よりリアルな競馬を体験できます。
+                </p>
               </div>
             </div>
 

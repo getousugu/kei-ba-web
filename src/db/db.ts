@@ -71,16 +71,19 @@ export async function ensureHorsePool(targetSize = 80): Promise<void> {
     const h = horseGenerator.generateHorse(usedNames);
     const [weight, weight_change] = horseGenerator.generateHorseWeight();
     const jockey_name = horseGenerator.generateJockeyName();
-    const record = horseGenerator.generateRecord(h.rarity);
+    
+    // 全ての馬を 0戦0勝 (0-0-0-0) で開始するように変更
+    const record = { wins: 0, places: 0, shows: 0, losses: 0 };
+    
     toAdd.push({
       ...h,
       jockey_name,
       weight,
       weight_change,
       record,
-      rating: Math.round(50 * 10 + Math.random() * 200),
-      total_races: record.wins + record.places + record.shows + record.losses,
-      wins: record.wins,
+      rating: h.rating || 1000,
+      total_races: 0,
+      wins: 0,
     });
   }
   await db.horses.bulkAdd(toAdd);

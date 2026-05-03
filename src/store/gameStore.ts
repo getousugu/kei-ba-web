@@ -27,6 +27,7 @@ export interface RoomSettings {
   fieldCondition: string;
   weather: string;
   hostMigration: boolean;
+  realOdds: boolean;
 }
 
 interface GameState {
@@ -132,6 +133,7 @@ export const useGameStore = create<GameState>((set) => ({
     fieldCondition: 'random',
     weather: 'random',
     hostMigration: true,
+    realOdds: false,
   },
   bettingEndTime: null,
   raceStartTime: null,
@@ -168,9 +170,34 @@ export const useGameStore = create<GameState>((set) => ({
   }),
   resetBets: () => set({ myBets: [] }),
   setRematchVotes: (votes) => set({ rematchVotes: votes }),
-  setRoomSettings: (settings) => set((state) => ({
-    roomSettings: { ...state.roomSettings, ...settings }
-  })),
+   setRoomSettings: (settings) => set((state) => {
+     const nextSettings = { ...state.roomSettings, ...settings };
+     
+     // ルール変更時のコイン処理
+     if (settings.coinRule && settings.coinRule !== state.roomSettings.coinRule) {
+       if (settings.coinRule === 'room') {
+         // ルームモードに切り替え: まだ初期化されていなければ10000にリセット
+         if (!state.roomCoinsInitialized) {
+           setTimeout(() => {
+             useGameStore.getState().setMyCoins(10000);
+             useGameStore.getState().setRoomCoinsInitialized(true);
+           }, 0);
+         }
+       } else if (settings.coinRule === 'global') {
+         // グローバルモードに切り替え: DBから最新の値を読み込む
+         import('../db/db').then(({ db }) => {
+           db.players.get('me').then(me => {
+             if (me) {
+               useGameStore.getState().setMyCoins(me.global_coins);
+               useGameStore.getState().setRoomCoinsInitialized(false);
+             }
+           });
+         });
+       }
+     }
+     
+     return { roomSettings: nextSettings };
+   }),
   setBettingEndTime: (bettingEndTime) => set({ bettingEndTime }),
   setMyCoins: (myCoins) => {
     set({ myCoins });

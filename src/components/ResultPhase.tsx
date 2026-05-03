@@ -52,9 +52,7 @@ export default function ResultPhase() {
     setTotalPayout(total);
     if (total > 0) {
       const newBal = myCoins + total;
-      useGameStore.setState({ myCoins: newBal });
-      // Bug-コイン: DBに保存して永続化
-      db.players.update('me', { global_coins: newBal });
+      useGameStore.getState().setMyCoins(newBal);
       // コイン変動をホストに報告
       peerManager.reportCoinsToHost(newBal);
     }
@@ -122,7 +120,7 @@ export default function ResultPhase() {
     if (s.myCoins >= 1000000) s.unlockTitle('billionaire');
     else if (s.myCoins >= 500000) s.unlockTitle('rich');
     else if (s.myCoins >= 100000) s.unlockTitle('millionaire');
-    
+
     if (s.myCoins <= 1000) s.unlockTitle('bankrupt');
 
     const sessionTotalBet = myBets.reduce((acc, b) => acc + b.amount, 0);
@@ -131,10 +129,10 @@ export default function ResultPhase() {
     else if (sessionTotalBet >= 10000) s.unlockTitle('gambler');
 
     if (newStats.totalWins >= 5) s.unlockTitle('steady');
-    
+
     if (newStats.totalPayout >= 10000000) s.unlockTitle('god_of_gambling');
     else if (newStats.totalPayout >= 1000000) s.unlockTitle('legend');
-    
+
     if (newStats.totalRaces >= 100) s.unlockTitle('centaur');
     else if (newStats.totalRaces >= 50) s.unlockTitle('veteran');
     else if (newStats.totalRaces >= 10) s.unlockTitle('seeker');
@@ -173,35 +171,69 @@ export default function ResultPhase() {
 
   /** 同じレース条件で馬プールから再抽選して再レース */
   const handleRematch = async () => {
-    const { distance, field_condition: fc, weather, course_feature } = raceData;
+    const s = useGameStore.getState();
+    const settings = s.roomSettings;
+    const rd = s.raceData;
+    if (!rd) return;
+
+    // --- 条件の決定 (おまかせ設定の場合は再抽選する) ---
+    const { FIELD_CONDITIONS, DISTANCE_CATEGORIES } = await import('../core/constants');
+
+    let nextDistance = rd.distance;
+    if (settings.distance === 'random') {
+      const distKeys = Object.keys(DISTANCE_CATEGORIES);
+      const distanceCat = distKeys[Math.floor(Math.random() * distKeys.length)];
+      const [lo, hi] = DISTANCE_CATEGORIES[distanceCat];
+      nextDistance = Math.round((Math.random() * (hi - lo) + lo) / 100) * 100;
+    }
+
+    let nextFC = rd.field_condition;
+    if (settings.fieldCondition === 'random') {
+      nextFC = FIELD_CONDITIONS[Math.floor(Math.random() * FIELD_CONDITIONS.length)];
+    }
+
+    let nextWeather = rd.weather;
+    if (settings.weather === 'random') {
+      const wList = ['晴', '曇', '雨', '雪'];
+      nextWeather = wList[Math.floor(Math.random() * wList.length)];
+    }
+
+    const nextCourseFeature = rd.course_feature || '平坦';
+
     const { drawHorsesFromPool } = await import('../db/db');
     const { oddsCalculator: oc } = await import('../core/odds_calculator');
 
-    const count = horses.length || 12;
+    const count = settings.horseCount || s.horses.length || 12;
     const drawn = await drawHorsesFromPool(count);
     const freshHorses = drawn.map((h, i) => ({ ...h, horse_number: i + 1 }));
     freshHorses.forEach(h => {
-      (h as any).score = oc.calculateCompositeScore(h, distance, fc, course_feature || '平坦');
+      (h as any).score = oc.calculateCompositeScore(h, nextDistance, nextFC, nextCourseFeature);
     });
-    const horsesWithOdds = oc.calculateInitialOdds(freshHorses);
-    const freshRaceData = { distance, field_condition: fc, weather, course_feature: course_feature || '平坦' };
+    const horsesWithOdds = oc.calculateInitialOdds(freshHorses, settings.realOdds);
+    const freshRaceData = {
+      distance: nextDistance,
+      field_condition: nextFC,
+      weather: nextWeather,
+      course_feature: nextCourseFeature
+    };
 
     // Bug-16: coinRule==='room' の場合、ホスト自身のコインもリセット
-    const settings = useGameStore.getState().roomSettings;
     if (settings.coinRule === 'room') {
-      useGameStore.getState().setMyCoins(10000);
+      s.setMyCoins(10000);
     }
 
-    useGameStore.getState().updateHorses(horsesWithOdds);
-    useGameStore.getState().setRaceData(freshRaceData);
-    useGameStore.getState().resetBets();
-    useGameStore.getState().setHostBetPool([]);
-    useGameStore.getState().setReadyPlayers();
-    useGameStore.getState().setBettingEndTime(null);
-    useGameStore.getState().setRematchVotes({ continue: [], end: [] });
+    s.updateHorses(horsesWithOdds);
+    s.setRaceData(freshRaceData);
+    s.resetBets();
+    s.setHostBetPool([]);
+    s.setReadyPlayers();
+    s.setBettingEndTime(null);
+    s.setRematchVotes({ continue: [], end: [] });
+
+    // 馬券購入時間は roomSettings から引き継ぐ
     const endTime = Date.now() + (settings.bettingTime || 60) * 1000;
-    useGameStore.getState().setBettingEndTime(endTime);
-    useGameStore.getState().setPhase('betting');
+    s.setBettingEndTime(endTime);
+    s.setPhase('betting');
 
     peerManager.broadcast({
       type: 'phase_start',
@@ -228,7 +260,7 @@ export default function ResultPhase() {
         <div>
           <h1 className="font-black text-white tracking-widest text-lg uppercase">Race Result</h1>
           {raceData && (
-            <div style={{ fontSize: 11 }} className="text-gray-600 font-mono">
+            <div style={{ fontSize: 11 }} className="text-gray-400 font-mono font-bold">
               {raceData.distance}m · {raceData.field_condition} · {raceData.weather}
             </div>
           )}
@@ -250,7 +282,7 @@ export default function ResultPhase() {
         {role === 'host' && (
           <div className="flex items-center gap-3">
             {totalVoters > 0 && (
-              <div style={{ fontSize: 11 }} className="text-gray-600 text-right">
+              <div style={{ fontSize: 11 }} className="text-gray-400 font-black text-right">
                 <div>継続 {contVotes} / 終了 {endVotes}</div>
                 <div className="text-gray-700">({totalVoters}人が投票可能)</div>
               </div>
@@ -269,7 +301,7 @@ export default function ResultPhase() {
         {/* Client actions — Bug-14: 'client' -> 'guest' に修正 */}
         {role === 'guest' && (
           <div className="flex items-center gap-3">
-            <div style={{ fontSize: 11 }} className="text-gray-600 flex flex-col items-end">
+            <div style={{ fontSize: 11 }} className="text-gray-400 font-black flex flex-col items-end">
               <span>{myVote ? (
                 <span className="text-gray-400">投票済み：{myVote === 'continue' ? '継続を要請' : '終了を要請'}</span>
               ) : 'ホストへ要請を送る'}</span>
@@ -290,11 +322,11 @@ export default function ResultPhase() {
         <div className="max-w-3xl mx-auto space-y-5">
 
           {/* ── Finish order ── */}
-          <section className="panel rounded-xl overflow-hidden">
-            <div className="panel-header">確定着順</div>
+          <section className="panel rounded-xl overflow-hidden border border-[#2a2a32]">
+            <div className="panel-header bg-[#202028] text-gray-300 font-black">確定着順</div>
             <table className="w-full">
               <thead>
-                <tr style={{ fontSize: 10 }} className="text-gray-600 uppercase border-b border-[#2a2a32]">
+                <tr style={{ fontSize: 10 }} className="text-gray-400 font-black uppercase border-b border-[#2a2a32]">
                   <th className="px-4 py-2 w-14 text-left">着</th>
                   <th className="px-4 py-2 w-14 text-center">馬番</th>
                   <th className="px-4 py-2 text-left">馬名</th>
@@ -304,28 +336,28 @@ export default function ResultPhase() {
               </thead>
               <tbody>
                 {results.map((r: any, idx: number) => (
-                  <tr key={r.horse_number} className={`border-b border-[#1e1e22] ${idx < 3 ? 'bg-white/[0.02]' : ''} animate-fade-in`}
+                  <tr key={r.horse_number} className={`border-b border-[#1e1e22] ${idx < 3 ? 'bg-white/[0.04]' : ''} animate-fade-in`}
                     style={{ animationDelay: `${idx * 40}ms` }}>
                     <td className="px-4 py-3 font-mono font-black">
-                      {idx < 3 ? <span style={{ fontSize: 18 }}>{MEDAL[idx]}</span> : <span className="text-gray-600 text-xs">{idx + 1}着</span>}
+                      {idx < 3 ? <span style={{ fontSize: 18 }}>{MEDAL[idx]}</span> : <span className="text-gray-400 text-xs font-black">{idx + 1}着</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-white font-black" style={{ background: HORSE_COLORS[r.horse_number - 1] || '#666', fontSize: 11 }}>{r.horse_number}</span>
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-white font-black shadow-lg shadow-black/40" style={{ background: HORSE_COLORS[r.horse_number - 1] || '#666', fontSize: 11 }}>{r.horse_number}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-gray-200">{r.horse_name}</span>
-                        <span className="text-[10px] px-1 bg-white/5 rounded text-gray-500 font-mono">
+                        <span className="font-bold text-white">{r.horse_name}</span>
+                        <span className="text-[10px] px-1 bg-white/10 rounded text-gray-300 font-mono font-bold">
                           R{Math.floor(horses.find(h => h.horse_number === r.horse_number)?.rating || 1000)}
                         </span>
-                        <span className="text-[9px] text-gray-600 font-bold">
+                        <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">
                           {horses.find(h => h.horse_number === r.horse_number)?.total_races || 0}戦{horses.find(h => h.horse_number === r.horse_number)?.wins || 0}勝
                         </span>
                       </div>
-                      {r.jockey_name && <div style={{ fontSize: 10 }} className="text-gray-600">{r.jockey_name}</div>}
+                      {r.jockey_name && <div style={{ fontSize: 10 }} className="text-gray-400 font-bold">{r.jockey_name}</div>}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-gray-400 tabular">{r.finish_time}秒</td>
-                    <td className="px-4 py-3 text-right font-bold text-gray-600 text-xs">{r.margin}</td>
+                    <td className="px-4 py-3 text-right font-mono text-gray-300 font-bold tabular">{r.finish_time}秒</td>
+                    <td className="px-4 py-3 text-right font-black text-gray-400 text-xs">{r.margin}</td>
                   </tr>
                 ))}
               </tbody>
@@ -334,45 +366,45 @@ export default function ResultPhase() {
 
           {/* ── Payout summary ── */}
           <div className="grid grid-cols-3 gap-3">
-            <div className={`panel rounded-xl p-4 flex flex-col items-center justify-center text-center ${totalPayout > 0 ? 'border-yellow-500/30 bg-yellow-500/5' : ''}`}>
-              <div style={{ fontSize: 10 }} className="text-gray-600 uppercase tracking-widest mb-2">結果</div>
+            <div className={`panel rounded-xl p-4 flex flex-col items-center justify-center text-center ${totalPayout > 0 ? 'border-yellow-500/30 bg-yellow-500/10' : ''}`}>
+              <div style={{ fontSize: 10 }} className="text-gray-400 font-black uppercase tracking-widest mb-2">結果</div>
               {totalPayout > 0 ? (
                 <>
-                  <div className="font-black text-yellow-500 animate-pop-in" style={{ fontSize: 36 }}>的中！</div>
+                  <div className="font-black text-yellow-500 animate-pop-in" style={{ fontSize: 36, textShadow: '0 0 20px rgba(234, 179, 8, 0.3)' }}>的中！</div>
                   {hitDetails.some(d => d.payoutOdds >= 300) ? (
                     <div className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded font-black animate-bounce mt-1">👑 超万馬券！！</div>
                   ) : hitDetails.some(d => d.payoutOdds >= 100) ? (
                     <div className="text-[10px] bg-yellow-600 text-black px-2 py-0.5 rounded font-black animate-pulse mt-1">🎰 万馬券！</div>
                   ) : (
-                    <div style={{ fontSize: 11 }} className="text-yellow-700 mt-1">おめでとうございます</div>
+                    <div style={{ fontSize: 11 }} className="text-yellow-500 font-black mt-1">おめでとうございます</div>
                   )}
                 </>
               ) : myBets.length === 0 ? (
-                <><div className="font-black text-gray-500" style={{ fontSize: 30 }}>観戦</div><div style={{ fontSize: 11 }} className="text-gray-600 mt-1">馬券購入なし</div></>
+                <><div className="font-black text-gray-400" style={{ fontSize: 30 }}>観戦</div><div style={{ fontSize: 11 }} className="text-gray-500 font-bold mt-1 uppercase tracking-widest">No Bets Placed</div></>
               ) : (
-                <><div className="font-black text-gray-700" style={{ fontSize: 30 }}>不的中</div><div style={{ fontSize: 11 }} className="text-gray-700 mt-1">次は頑張ろう</div></>
+                <><div className="font-black text-gray-600" style={{ fontSize: 30 }}>不的中</div><div style={{ fontSize: 11 }} className="text-gray-600 font-bold mt-1">次は頑張ろう</div></>
               )}
             </div>
             <div className="panel rounded-xl p-4 col-span-2">
-              <div style={{ fontSize: 10 }} className="text-gray-600 uppercase tracking-widest mb-3">払戻・損益</div>
+              <div style={{ fontSize: 10 }} className="text-gray-400 font-black uppercase tracking-widest mb-3">払戻・損益</div>
               <div className="flex items-end gap-5">
                 <div>
-                  <div style={{ fontSize: 10 }} className="text-gray-600 mb-0.5">払戻合計</div>
+                  <div style={{ fontSize: 10 }} className="text-gray-500 font-bold mb-0.5 uppercase tracking-widest">払戻合計</div>
                   <div className="font-mono font-black text-white tabular" style={{ fontSize: 28 }}>
                     {totalPayout.toLocaleString()}<span className="text-yellow-500 ml-1" style={{ fontSize: 18 }}>C</span>
                   </div>
                 </div>
-                <div className="pb-1 text-gray-800">|</div>
+                <div className="pb-1 text-gray-700">|</div>
                 <div>
-                  <div style={{ fontSize: 10 }} className="text-gray-600 mb-0.5">損益</div>
+                  <div style={{ fontSize: 10 }} className="text-gray-500 font-bold mb-0.5 uppercase tracking-widest">損益</div>
                   <div className={`font-mono font-black tabular text-xl ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {profit >= 0 ? '+' : ''}{profit.toLocaleString()} C
                   </div>
                 </div>
               </div>
               <div className="mt-3 pt-3 border-t border-[#2a2a32] flex justify-between items-center text-xs">
-                <span className="text-gray-600">現在の所持金</span>
-                <span className="font-mono font-bold text-gray-300 tabular">{myCoins.toLocaleString()} C</span>
+                <span className="text-gray-400 font-bold">現在の所持金</span>
+                <span className="font-mono font-black text-gray-200 tabular">{myCoins.toLocaleString()} C</span>
               </div>
             </div>
           </div>
@@ -380,7 +412,7 @@ export default function ResultPhase() {
           {/* ── Ticket detail ── */}
           {hitDetails.length > 0 && (
             <section className="panel rounded-xl overflow-hidden">
-              <div className="panel-header flex justify-between">
+              <div className="panel-header bg-[#202028] text-gray-300 flex justify-between font-black uppercase tracking-widest">
                 <span>馬券明細</span>
                 <span>{myBets.length}件 · 投資 {totalBetAmount.toLocaleString()}C</span>
               </div>
@@ -389,14 +421,14 @@ export default function ResultPhase() {
                   <div key={i} className={`flex items-center justify-between px-4 py-3 animate-fade-in ${d.isHit ? 'bg-yellow-500/5' : ''}`} style={{ animationDelay: `${i * 30}ms` }}>
                     <div className="flex items-center gap-3">
                       <span className={`bet-chip ${d.isHit ? '!bg-yellow-500 !text-black' : ''}`}>{d.bet_type}</span>
-                      <span className="font-mono font-bold text-gray-300 tabular">{d.horse_numbers.join('-')}</span>
-                      <span className="text-gray-700 text-xs">{d.amount.toLocaleString()}C</span>
+                      <span className="font-mono font-black text-gray-200 tabular">{d.horse_numbers.join('-')}</span>
+                      <span className="text-gray-500 text-xs font-bold">{d.amount.toLocaleString()}C</span>
                     </div>
                     <div className="text-right">
-                      <div className={`font-mono font-black tabular ${d.isHit ? 'text-yellow-500' : 'text-gray-700'}`}>
+                      <div className={`font-mono font-black tabular ${d.isHit ? 'text-yellow-500' : 'text-gray-600'}`}>
                         {d.isHit ? `+${d.payout.toLocaleString()}C` : 'ハズレ'}
                       </div>
-                      {d.isHit && <div style={{ fontSize: 10 }} className="text-yellow-700">{d.payoutOdds.toFixed(1)}倍</div>}
+                      {d.isHit && <div style={{ fontSize: 10 }} className="text-yellow-600 font-black">{d.payoutOdds.toFixed(1)}倍</div>}
                     </div>
                   </div>
                 ))}

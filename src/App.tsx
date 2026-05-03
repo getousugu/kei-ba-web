@@ -221,14 +221,42 @@ export default function App() {
                 <span>パッチノート</span>
                 <span className="text-[10px] text-gray-500 bg-[#0c0c0e] px-2 py-1 rounded-full">最新情報</span>
               </h3>
-              <ul className="space-y-4 text-xs text-gray-400 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                <li>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-indigo-400 font-bold">v1.0.1</span>
-                    <span className="text-[9px] text-gray-600">May 2026</span>
-                  </div>
-                  <p className="leading-relaxed">正式公開！Web版「けいーば」へようこそ。シークレットコードによる隠し称号機能を追加しました。快適な競馬ライフをお楽しみください。</p>
-                </li>
+              <ul className="space-y-6 text-xs text-gray-400 max-h-80 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                {[
+                  {
+                    version: 'v1.0.2',
+                    date: 'May 3, 2026',
+                    content: 'レース体験の向上と機能追加',
+                    details: [
+                      '同条件再レース時、おまかせ設定なら新しく抽選されるよう修正',
+                      '馬券購入時間・金額の入力時、0を消す手間を省くよう改善',
+                      '馬券未入力時のデフォルト値（120秒/100C）を設定',
+                      'ルーム固定コイン設定の挙動を安定化（ルーム内での継続性を確保）',
+                      '数値入力欄のスピナーを非表示にし、文字被りを解消',
+                      '馬券購入が稀に失敗する不具合の修正',
+                      '新機能「リアルオッズ」設定を追加',
+                    ]
+                  },
+                  {
+                    version: 'v1.0.1',
+                    date: 'May 2026',
+                    content: '正式公開！Web版「けいーば」へようこそ。シークレットコードによる隠し称号機能を追加しました。快適な競馬ライフをお楽しみください。',
+                    details: []
+                  }
+                ].map((patch, idx) => (
+                  <li key={idx} className="relative pl-4 border-l-2 border-indigo-500/30 hover:border-indigo-500 transition-colors">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-indigo-400 font-black tracking-tight">{patch.version}</span>
+                      <span className="text-[9px] text-gray-600 font-mono">{patch.date}</span>
+                    </div>
+                    <p className="leading-relaxed text-gray-300 font-medium mb-2">{patch.content}</p>
+                    {patch.details.length > 0 && (
+                      <ul className="space-y-1 list-disc list-inside text-[10px] text-gray-500 font-bold">
+                        {patch.details.map((d, i) => <li key={i}>{d}</li>)}
+                      </ul>
+                    )}
+                  </li>
+                ))}
               </ul>
             </div>
           )}

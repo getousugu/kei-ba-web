@@ -137,19 +137,22 @@ export default function BettingPhase() {
   };
 
   const combos = getCombinations();
-  const totalCost = combos.length * betAmount;
+  const effectiveBetAmount = betAmount || 100;
+  const totalCost = combos.length * effectiveBetAmount;
 
   const handlePurchase = () => {
-    if (isBettingClosed() || !combos.length || totalCost > myCoins || betAmount <= 0) return;
+    if (isBettingClosed() || !combos.length || totalCost > myCoins || effectiveBetAmount <= 0) return;
     const newCoins = myCoins - totalCost;
-    useGameStore.setState({ myCoins: newCoins });
+    useGameStore.getState().setMyCoins(newCoins);
     const role = useGameStore.getState().role;
     combos.forEach(nums => {
-      const bet: Bet = { 
-        id: Math.random().toString(36).substring(2, 9),
-        bet_type: betType, 
-        horse_numbers: nums, 
-        amount: betAmount <= 0 ? 1 : betAmount 
+      const bet: Bet = {
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+        playerId: peerManager.myPeerId || 'unknown',
+        playerName: useGameStore.getState().playerName,
+        bet_type: betType,
+        horse_numbers: nums,
+        amount: effectiveBetAmount
       };
       addBet(bet);
       // Bug-10: ホストの場合は sendToHost を呼ばず直接 hostBetPool に追加
@@ -186,7 +189,7 @@ export default function BettingPhase() {
     useGameStore.getState().removeBet(bet.id);
     peerManager.sendToHost({ type: 'cancel_bet', betId: bet.id });
     peerManager.reportCoinsToHost(newCoins);
-    
+
     const cancelMsg = {
       id: 'cancel-' + Date.now().toString(36),
       sender: 'SYSTEM',
@@ -240,7 +243,7 @@ export default function BettingPhase() {
         <div className="flex items-center gap-6">
           {/* Timer display */}
           <div className="flex items-center gap-2">
-            <div className="text-[10px] text-gray-600 uppercase font-bold">締切まで</div>
+            <div className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">締切まで</div>
             <div className={`font-mono text-xl font-black tabular-nums ${timeLeft !== null && timeLeft < 30 ? 'text-red-500 animate-pulse' : 'text-indigo-400'}`}>
               {timeLeft !== null ? `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}` : '--:--'}
             </div>
@@ -254,11 +257,11 @@ export default function BettingPhase() {
 
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="text-[10px] text-gray-600">残高</div>
+              <div className="text-[10px] text-gray-400 font-bold">残高</div>
               <div className="font-mono font-black text-yellow-500 tabular text-sm">{myCoins.toLocaleString()} C</div>
             </div>
             {role === 'host' && (
-              <button onClick={startRace} disabled={isTransitioning} className="px-4 py-1.5 rounded font-bold text-xs transition-all bg-indigo-600 hover:bg-indigo-500 text-white">
+              <button onClick={startRace} disabled={isTransitioning} className="px-4 py-1.5 rounded font-bold text-xs transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20">
                 {isTransitioning ? '最終計算中...' : 'レース開始'}
               </button>
             )}
@@ -273,7 +276,7 @@ export default function BettingPhase() {
           <div className="absolute inset-0 z-50 bg-[#111113]/90 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in">
             <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
             <div className="text-xl font-black text-white tracking-widest uppercase">レース集計中...</div>
-            <div className="text-xs text-gray-500 mt-2">出馬表を最終確認しています</div>
+            <div className="text-xs text-gray-400 mt-2 font-bold uppercase tracking-widest">出馬表を最終確認しています</div>
           </div>
         )}
 
@@ -282,7 +285,7 @@ export default function BettingPhase() {
           <div className="flex border-b border-[#2a2a32] bg-[#161618] shrink-0">
             {(['list', 'chat', 'owned'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className={`flex-1 py-2 text-xs font-bold tracking-wider uppercase transition-colors ${tab === t ? 'text-white border-b-2 border-indigo-500 bg-[#1a1a1e]' : 'text-gray-600 hover:text-gray-400'}`}>
+                className={`flex-1 py-2.5 text-xs font-black tracking-[0.15em] uppercase transition-colors ${tab === t ? 'text-white border-b-2 border-indigo-500 bg-[#1a1a1e]' : 'text-gray-500 hover:text-gray-300'}`}>
                 {t === 'list' ? `出馬表` : t === 'chat' ? `チャット` : `購入済 (${myBets.length})`}
               </button>
             ))}
@@ -292,13 +295,13 @@ export default function BettingPhase() {
             <div className="flex-1 overflow-y-auto">
               <table className="w-full border-collapse" style={{ fontSize: 12 }}>
                 <thead>
-                  <tr className="bg-[#1a1a1e] text-gray-600 sticky top-0 z-10" style={{ fontSize: 10 }}>
+                  <tr className="bg-[#1a1a1e] text-gray-400 sticky top-0 z-10 font-black uppercase tracking-widest" style={{ fontSize: 10 }}>
                     <th className="w-8 px-2 py-2"></th>
                     <th className="w-10 text-center py-2">番</th>
                     <th className="px-2 py-2 text-left">馬名</th>
                     <th className="w-20 text-right px-2 py-2">騎手</th>
-                    <th className="w-12 text-right px-2 py-2">単勝</th>
-                    <th className="w-12 text-right px-2 py-2">複勝</th>
+                    <th className="w-12 text-right px-2 py-2 text-yellow-500/80">単勝</th>
+                    <th className="w-12 text-right px-2 py-2 text-gray-400">複勝</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -323,11 +326,11 @@ export default function BettingPhase() {
                         </td>
                         <td className="px-2 py-2.5">
                           <div className="font-bold text-gray-100">{RARITY_EMOJI[h.rarity]} {h.name}</div>
-                          <div style={{ fontSize: 10 }} className="text-gray-400 font-medium">{h.age}歳{h.gender} · {h.running_style}</div>
+                          <div style={{ fontSize: 10 }} className="text-gray-300 font-bold">{h.age}歳{h.gender} · {h.running_style}</div>
                         </td>
-                        <td className="px-2 py-2.5 text-right text-gray-300 font-medium" style={{ fontSize: 11 }}>{h.jockey_name || '—'}</td>
-                        <td className="px-2 py-2.5 text-right font-mono font-black text-yellow-400 text-sm">{h.odds_win?.toFixed(1)}</td>
-                        <td className="px-2 py-2.5 text-right font-mono text-gray-400">{h.odds_place?.toFixed(1)}</td>
+                        <td className="px-2 py-2.5 text-right text-gray-100 font-bold" style={{ fontSize: 11 }}>{h.jockey_name || '—'}</td>
+                        <td className="px-2 py-2.5 text-right font-mono font-black text-yellow-500 text-sm tabular-nums">{h.odds_win?.toFixed(1)}</td>
+                        <td className="px-2 py-2.5 text-right font-mono text-gray-300 font-bold tabular-nums">{h.odds_place?.toFixed(1)}</td>
                       </tr>
                     );
                   })}
@@ -370,7 +373,7 @@ export default function BettingPhase() {
                       </div>
                       <div className="text-[10px] text-gray-500 font-bold">{bet.amount.toLocaleString()} C</div>
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleCancelBet(bet)}
                       disabled={isBettingClosed()}
                       className="px-3 py-1.5 bg-red-900/30 hover:bg-red-800/50 text-red-400 text-[10px] font-black rounded border border-red-900/50 transition-all disabled:opacity-20"
@@ -396,16 +399,39 @@ export default function BettingPhase() {
             </div>
             <div className="flex items-center gap-3">
               <div className="min-w-[90px]">
-                <div style={{ fontSize: 10 }} className="text-gray-600 mb-0.5">{buyMode === '流し' ? `軸→相手` : `選択 ${selected.length}/${buyMode === '通常' ? maxSel : '∞'}`}</div>
+                <div style={{ fontSize: 10 }} className="text-gray-400 font-bold mb-0.5">{buyMode === '流し' ? `軸→相手` : `選択 ${selected.length}/${buyMode === '通常' ? maxSel : '∞'}`}</div>
                 <div className="font-mono font-black text-gray-300 tabular">{selected.length > 0 ? selected.join(buyMode === '流し' && selected.length > 1 ? '→' : '-') : '—'}</div>
               </div>
               <div className="text-gray-800">|</div>
               <div>
-                <div style={{ fontSize: 10 }} className="text-gray-600 mb-0.5">1点</div>
+                <div style={{ fontSize: 10 }} className="text-gray-400 font-bold mb-1 flex justify-between">
+                  <span>1点あたりの金額</span>
+                  <div className="flex gap-1 ml-4">
+                    {[100, 500, 1000, 5000].map(amt => (
+                      <button key={amt} onClick={() => setBetAmount(prev => prev + amt)} disabled={isBettingClosed()}
+                        className="px-1.5 py-0.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[9px] font-black rounded border border-indigo-500/20 transition-all">
+                        +{amt.toLocaleString()}
+                      </button>
+                    ))}
+                    <button onClick={() => setBetAmount(Math.floor(myCoins / (combos.length || 1)))} disabled={isBettingClosed() || !combos.length}
+                      className="px-1.5 py-0.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 text-[9px] font-black rounded border border-yellow-500/20 transition-all">
+                      MAX
+                    </button>
+                    <button onClick={() => setBetAmount(0)} disabled={isBettingClosed()}
+                      className="px-1.5 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[9px] font-black rounded border border-red-500/20 transition-all">
+                      CLR
+                    </button>
+                  </div>
+                </div>
                 <div className="flex items-center gap-1">
-                  <input type="number" min="0" step="100" value={betAmount} onChange={e => setBetAmount(Math.max(0, parseInt(e.target.value) || 0))} disabled={isBettingClosed()}
-                    className="w-24 bg-[#0e0e10] border border-[#2a2a32] rounded px-2 py-1 font-mono text-sm text-white focus:outline-none focus:border-indigo-500 disabled:opacity-30" />
-                  <span style={{ fontSize: 11 }} className="text-gray-600">C</span>
+                  <input type="number" min="0" step="100" value={betAmount || ''} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setBetAmount(Math.max(0, parseInt(e.target.value) || 0))} 
+                    disabled={isBettingClosed()}
+                    className="w-28 bg-[#0e0e10] border border-[#2a2a32] rounded px-3 py-1.5 font-mono text-sm text-white focus:outline-none focus:border-indigo-500 disabled:opacity-30 transition-all shadow-inner" 
+                    placeholder="100"
+                  />
+                  <span style={{ fontSize: 11 }} className="text-gray-400 font-black ml-1">C</span>
                 </div>
               </div>
               {combos.length > 0 && (
@@ -416,7 +442,7 @@ export default function BettingPhase() {
               )}
               <div className="flex-1" />
               {feedback && <span style={{ fontSize: 11 }} className="text-green-400 font-bold animate-fade-in">{feedback}</span>}
-              <button onClick={handlePurchase} disabled={isBettingClosed() || !combos.length || totalCost > myCoins || betAmount <= 0 || isSpectator}
+              <button onClick={handlePurchase} disabled={isBettingClosed() || !combos.length || totalCost > myCoins || isSpectator}
                 className="px-5 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-[#2a2a32] disabled:text-gray-600 text-white font-black text-sm rounded-lg transition-all active:scale-95">
                 {isSpectator ? '観戦中' : isBettingClosed() ? '締切済' : '購入する'}
               </button>
@@ -426,7 +452,7 @@ export default function BettingPhase() {
 
         {/* Right: Horse cards */}
         <div className="overflow-y-auto p-3 space-y-3" style={{ width: '48%' }}>
-          <div style={{ fontSize: 10 }} className="text-gray-600 uppercase tracking-widest font-bold sticky top-0 bg-[#111113] pb-1 z-10">全馬データ</div>
+          <div style={{ fontSize: 10 }} className="text-gray-400 uppercase tracking-widest font-black sticky top-0 bg-[#111113] pb-1 z-10">全馬データ</div>
           {horses.map(h => {
             const color = HORSE_COLORS[h.horse_number - 1] || '#aaa';
             const isSel = selected.includes(h.horse_number);
@@ -435,7 +461,7 @@ export default function BettingPhase() {
               <div key={h.horse_number} onClick={() => canSel && handleHorseSelect(h.horse_number)}
                 className={`rounded-lg transition-all cursor-pointer relative overflow-hidden bg-[#1e1e24] ${isSel ? 'ring-2 ring-indigo-500 bg-indigo-950/40' : 'hover:bg-[#25252c]'} ${!canSel ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: color }} />
-                
+
                 <div className="pl-4 pr-3 py-3">
                   {/* Header */}
                   <div className="flex items-center gap-1.5 mb-2">
@@ -444,7 +470,7 @@ export default function BettingPhase() {
                       {h.horse_number}番 {h.name} <span className="text-gray-300 font-bold text-[13px] ml-1">({h.age || 4}歳 {h.gender || '牡'} {h.coat_color || '栗毛'})</span>
                     </span>
                   </div>
-                  
+
                   {/* Jockey */}
                   <div className="mb-2">
                     <div className="text-[11px] text-gray-400 font-bold mb-0.5 leading-none">騎手</div>
@@ -453,7 +479,7 @@ export default function BettingPhase() {
 
                   {/* Abilities */}
                   <div className="mb-3">
-                    <div className="text-[11px] text-white font-bold mb-1 leading-none">能力値</div>
+                    <div className="text-[11px] text-white font-black uppercase tracking-widest mb-1 leading-none">能力値</div>
                     <div className="bg-[#1e1a29] rounded p-2.5 border border-[#2d283e] space-y-1.5">
                       {[
                         ['スピード', h.speed],
@@ -464,7 +490,7 @@ export default function BettingPhase() {
                         ['賢さ', h.wisdom],
                       ].map(([label, val]) => (
                         <div key={label as string} className="flex items-center text-[12px] leading-none">
-                          <span className="text-gray-300 w-16 inline-block tracking-widest">{label}</span>
+                          <span className="text-gray-400 w-16 inline-block font-black tracking-tighter">{label}</span>
                           <BlockBar value={val as number} />
                           <span className="text-gray-300 w-7 text-right font-mono ml-2 font-bold">{Math.floor(val as number)}</span>
                         </div>
@@ -475,30 +501,30 @@ export default function BettingPhase() {
                   {/* Bottom Grid */}
                   <div className="grid grid-cols-12 gap-y-3 gap-x-2 text-[11px] leading-none">
                     <div className="col-span-5">
-                      <div className="text-gray-400 font-bold mb-1">距離適性</div>
-                      <div className="text-gray-200 font-mono tracking-tight text-[12px]">{`短距離${h.distance_apt?.['短距離']||'C'} / マイル${h.distance_apt?.['マイル']||'A'} / 中距離${h.distance_apt?.['中距離']||'D'} / 長距離${h.distance_apt?.['長距離']||'A'}`}</div>
+                      <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">距離適性</div>
+                      <div className="text-gray-100 font-mono font-bold tracking-tight text-[11px]">{`短距離${h.distance_apt?.['短距離'] || 'C'} マ${h.distance_apt?.['マイル'] || 'A'} 中${h.distance_apt?.['中距離'] || 'D'} 長${h.distance_apt?.['長距離'] || 'A'}`}</div>
                     </div>
                     <div className="col-span-3">
-                      <div className="text-gray-400 font-bold mb-1">脚質</div>
-                      <div className="text-gray-200 font-bold text-[12px]">{h.running_style}</div>
+                      <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">脚質</div>
+                      <div className="text-gray-100 font-black text-[11px]">{h.running_style}</div>
                     </div>
                     <div className="col-span-4">
-                      <div className="text-gray-400 font-bold mb-1">今日の調子</div>
-                      <div className="font-bold text-[12px]" style={{ color: COND_COLOR[h.condition] || '#9ca3af' }}>{h.condition} {COND_ICON[h.condition]}</div>
+                      <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">今日の調子</div>
+                      <div className="font-black text-[11px]" style={{ color: COND_COLOR[h.condition] || '#9ca3af' }}>{h.condition} {COND_ICON[h.condition]}</div>
                     </div>
-                    
+
                     <div className="col-span-5">
-                      <div className="text-gray-400 font-bold mb-1">馬体重</div>
-                      <div className="text-gray-200 font-mono text-[12px]">{h.weight || 500}kg ({h.weight_change ? (h.weight_change > 0 ? `+${h.weight_change}` : h.weight_change) : '±0'})</div>
+                      <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">馬体重</div>
+                      <div className="text-gray-100 font-mono font-bold text-[11px]">{h.weight || 500}kg ({h.weight_change ? (h.weight_change > 0 ? `+${h.weight_change}` : h.weight_change) : '±0'})</div>
                     </div>
                     <div className="col-span-3">
-                      <div className="text-gray-400 font-bold mb-1">通算成績</div>
-                      <div className="text-gray-200 font-mono text-[12px]">{h.wins||0}-{(h as any).record?.places||0}-{(h as any).record?.shows||0}-{(h as any).record?.losses||0}</div>
+                      <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">通算成績</div>
+                      <div className="text-gray-100 font-mono font-bold text-[11px]">{h.wins || 0}-{(h as any).record?.places || 0}-{(h as any).record?.shows || 0}-{(h as any).record?.losses || 0}</div>
                     </div>
                     <div className="col-span-4">
-                      <div className="text-gray-400 font-bold mb-1">レーティング</div>
-                      <div className="text-gray-200 font-mono flex items-center gap-1 text-[12px]">
-                        {Math.floor(h.rating || 1000)} (<span style={{color: RARITY_COLOR[h.rarity||'Common']}} className="text-[10px]">●</span> {h.rarity || 'Common'})
+                      <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">レーティング</div>
+                      <div className="text-gray-100 font-mono flex items-center gap-1 text-[11px] font-black">
+                        {Math.floor(h.rating || 1000)} (<span style={{ color: RARITY_COLOR[h.rarity || 'Common'] }} className="text-[10px]">●</span> {h.rarity || 'Common'})
                       </div>
                     </div>
                   </div>
