@@ -250,28 +250,21 @@ export class PeerManager {
       case 'phase_start':
         console.log('[PeerManager] Processing atomic state update:', data.phase);
         
-        // 1. Settings update (triggers coin logic if needed)
-        if (data.settings) {
-          store.setRoomSettings(data.settings);
-        }
+        const nextSettings = data.settings || data.roomSettings;
+        const isMidGame = (data.phase === 'betting' || data.phase === 'race');
+        const shouldSpectate = data.type === 'sync_full_state' && isMidGame;
 
-        // 2. Rest of state update
-        useGameStore.setState((s) => {
-          const isMidGame = (data.phase === 'betting' || data.phase === 'race');
-          const shouldSpectate = data.type === 'sync_full_state' && isMidGame;
-          const isSpectator = data.phase === 'betting' ? false : (s.isSpectator || shouldSpectate);
-
-          return {
-            ...s,
-            ...(data.horses ? { horses: data.horses } : {}),
-            ...(data.raceData ? { raceData: data.raceData } : {}),
-            ...(data.bettingEndTime ? { bettingEndTime: data.bettingEndTime } : {}),
-            ...(data.raceStartTime ? { raceStartTime: data.raceStartTime } : {}),
-            ...(data.participants ? { participants: data.participants } : {}),
-            ...(data.phase ? { phase: data.phase } : {}),
-            isSpectator
-          };
-        });
+        useGameStore.setState((s) => ({
+          ...s,
+          ...(nextSettings ? { roomSettings: { ...s.roomSettings, ...nextSettings } } : {}),
+          ...(data.horses ? { horses: data.horses } : {}),
+          ...(data.raceData ? { raceData: data.raceData } : {}),
+          ...(data.bettingEndTime ? { bettingEndTime: data.bettingEndTime } : {}),
+          ...(data.raceStartTime ? { raceStartTime: data.raceStartTime } : {}),
+          ...(data.participants ? { participants: data.participants } : {}),
+          ...(data.phase ? { phase: data.phase } : {}),
+          isSpectator: data.phase === 'betting' ? false : (s.isSpectator || shouldSpectate)
+        }));
         break;
       case 'chat':
         store.addChatMessage(data.msg);
@@ -360,7 +353,7 @@ export class PeerManager {
   }
 
   // Imp-5: ホストによるオッズ再計算とブロードキャスト
-  private async recalculateAndBroadcastOdds(pool: any[]) {
+  public async recalculateAndBroadcastOdds(pool: any[]) {
     const store = useGameStore.getState();
     const { oddsCalculator } = await import('../core/odds_calculator');
     // オッズ計算は現在の馬データとプール全体から算出する

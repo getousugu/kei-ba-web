@@ -121,16 +121,20 @@ export default function ResultPhase() {
     else if (s.myCoins >= 500000) s.unlockTitle('rich');
     else if (s.myCoins >= 100000) s.unlockTitle('millionaire');
 
-    if (s.myCoins <= 1000) s.unlockTitle('bankrupt');
+    if (s.myCoins <= 100) s.unlockTitle('poor');
+    else if (s.myCoins <= 1000) s.unlockTitle('bankrupt');
 
     const sessionTotalBet = myBets.reduce((acc, b) => acc + b.amount, 0);
     if (sessionTotalBet >= s.myCoins && s.myCoins > 0) s.unlockTitle('all_in');
-    if (sessionTotalBet >= 100000) s.unlockTitle('high_roller');
+    if (sessionTotalBet >= 500000) s.unlockTitle('high_stake');
+    else if (sessionTotalBet >= 100000) s.unlockTitle('high_roller');
     else if (sessionTotalBet >= 10000) s.unlockTitle('gambler');
 
-    if (newStats.totalWins >= 5) s.unlockTitle('steady');
+    if (newStats.totalWins >= 20) s.unlockTitle('winner_20');
+    else if (newStats.totalWins >= 5) s.unlockTitle('steady');
 
-    if (newStats.totalPayout >= 10000000) s.unlockTitle('god_of_gambling');
+    if (newStats.totalPayout >= 50000000) s.unlockTitle('whale');
+    else if (newStats.totalPayout >= 10000000) s.unlockTitle('god_of_gambling');
     else if (newStats.totalPayout >= 1000000) s.unlockTitle('legend');
 
     if (newStats.totalRaces >= 100) s.unlockTitle('centaur');
@@ -138,7 +142,27 @@ export default function ResultPhase() {
     else if (newStats.totalRaces >= 10) s.unlockTitle('seeker');
     else if (newStats.totalRaces >= 7) s.unlockTitle('lucky_seven');
 
-    if (newStats.totalRaces - newStats.totalWins >= 10) s.unlockTitle('loser');
+    if (newStats.totalRaces - newStats.totalWins >= 20) s.unlockTitle('unlucky_streak');
+    else if (newStats.totalRaces - newStats.totalWins >= 10) s.unlockTitle('loser');
+
+    // --- Weird / Secret Achievement Logic ---
+    // 背水の陣: 所持金が10C以下の状態で的中させた (的中前の所持金で判定)
+    const prevCoins = s.myCoins - sessionPayout + sessionTotalBet;
+    if (sessionWins > 0 && prevCoins <= 10) {
+      s.unlockTitle('last_chance');
+    }
+
+    // ラッキー・セブン・フィーバー: 所持金がちょうど 777 または 7777
+    if (s.myCoins === 777 || s.myCoins === 7777) {
+      s.unlockTitle('jackpot_777');
+    }
+
+    // 極限の勝負師: 全財産を賭けて、100倍以上の配当を手にした
+    const isAllIn = sessionTotalBet >= prevCoins && prevCoins > 0;
+    const hasBigHit = hitDetails.some(d => d.isHit && d.payoutOdds >= 100);
+    if (isAllIn && hasBigHit) {
+      s.unlockTitle('all_or_nothing');
+    }
 
     // Notify host of our current selected title if it changed (or just keep synced)
     if (role === 'guest') {
@@ -217,11 +241,6 @@ export default function ResultPhase() {
       course_feature: nextCourseFeature
     };
 
-    // Bug-16: coinRule==='room' の場合、ホスト自身のコインもリセット
-    if (settings.coinRule === 'room') {
-      s.setMyCoins(10000);
-    }
-
     s.updateHorses(horsesWithOdds);
     s.setRaceData(freshRaceData);
     s.resetBets();
@@ -230,8 +249,7 @@ export default function ResultPhase() {
     s.setBettingEndTime(null);
     s.setRematchVotes({ continue: [], end: [] });
 
-    // 馬券購入時間は roomSettings から引き継ぐ
-    const endTime = Date.now() + (settings.bettingTime || 60) * 1000;
+    const endTime = Date.now() + (settings.bettingTime || 120) * 1000;
     s.setBettingEndTime(endTime);
     s.setPhase('betting');
 
@@ -241,8 +259,7 @@ export default function ResultPhase() {
       horses: horsesWithOdds,
       raceData: freshRaceData,
       bettingEndTime: endTime,
-      // Bug-16: ゲスト側もコインリセットできるようフラグを送る
-      resetCoins: settings.coinRule === 'room',
+      settings: settings,
     });
   };
 

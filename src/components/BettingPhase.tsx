@@ -32,7 +32,7 @@ function BlockBar({ value }: { value: number }) {
 }
 
 export default function BettingPhase() {
-  const { horses, raceData, role, myCoins, myBets, addBet, chatMessages, addChatMessage, bettingEndTime, isSpectator } = useGameStore();
+  const { horses, raceData, role, myCoins, myBets, addBet, chatMessages, addChatMessage, bettingEndTime, isSpectator, roomSettings } = useGameStore();
 
   const [betType, setBetType] = useState(BET_TYPES[0]);
   const [buyMode, setBuyMode] = useState<'通常' | 'ボックス' | '流し'>('通常');
@@ -77,17 +77,56 @@ export default function BettingPhase() {
     }, 2000);
   }, []);
 
+  // NPC Betting Logic (Host Only)
+  useEffect(() => {
+    if (role !== 'host' || !roomSettings.npcEnabled || !bettingEndTime || isTransitioning) return;
+
+    const npcInterval = setInterval(async () => {
+      const now = Date.now();
+      if (now >= bettingEndTime) return;
+
+      if (Math.random() > 0.4) { // 60% chance every 2s
+        const { generateNPCBet, getNPCComment } = await import('../core/npc_logic');
+        const currentHorses = useGameStore.getState().horses;
+        const npcBet = generateNPCBet(currentHorses);
+        
+        if (npcBet) {
+          const currentPool = useGameStore.getState().hostBetPool;
+          const nextPool = [...currentPool, npcBet];
+          useGameStore.getState().setHostBetPool(nextPool);
+          peerManager.recalculateAndBroadcastOdds(nextPool);
+
+          // Notify in chat occasionally
+          if (Math.random() > 0.6) {
+            const comment = getNPCComment(npcBet.playerName!);
+            const msg = {
+              id: 'npc-msg-' + Date.now(),
+              sender: 'SYSTEM',
+              text: `[NPC] ${npcBet.playerName}「${comment}」 (${npcBet.bet_type} ${npcBet.horse_numbers.join('-')} に${npcBet.amount}C)`,
+              timestamp: Date.now()
+            };
+            addChatMessage(msg);
+            peerManager.broadcast({ type: 'chat', msg });
+          }
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(npcInterval);
+  }, [role, roomSettings.npcEnabled, bettingEndTime, isTransitioning, addChatMessage]);
+
   useEffect(() => {
     if (!bettingEndTime) return;
+    
     timerRef.current = setInterval(() => {
       const remaining = Math.max(0, Math.floor((bettingEndTime - Date.now()) / 1000));
       setTimeLeft(remaining);
       if (remaining <= 0) {
         if (timerRef.current) clearInterval(timerRef.current);
-        // Bug-9: role は store から直接取得して最新値を参照
         if (useGameStore.getState().role === 'host') startRace();
       }
     }, 1000);
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };

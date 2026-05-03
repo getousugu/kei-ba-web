@@ -85,7 +85,7 @@ export default function RaceSetupPhase() {
         horses: horsesWithOdds,
         raceData,
         bettingEndTime: endTime,
-        roomSettings: updatedSettings
+        settings: updatedSettings
       });
 
       // Update local state SECOND

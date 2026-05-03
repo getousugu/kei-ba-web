@@ -34,6 +34,16 @@ export default function RacePhase() {
   const [telop, setTelop] = useState<string>('');
   const [rankings, setRankings] = useState<{ hn: number; name: string; progress: number; prevRank?: number }[]>([]);
   const [pace, setPace] = useState<string>('');
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  if (!horses || horses.length === 0 || !raceData || !raceData.simulation) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-[#0c100c] text-white">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="font-black tracking-widest animate-pulse uppercase">Race Data Loading...</p>
+      </div>
+    );
+  }
 
   const rafRef = useRef<number | null>(null);
   const lastStageRef = useRef(-1);
@@ -42,6 +52,18 @@ export default function RacePhase() {
   const doneRef = useRef(false);
   const prevRankingsRef = useRef<Record<number, number>>({});
   const nextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishedHorsesRef = useRef<Set<number>>(new Set());
+  const lastFinishTimeRef = useRef<number>(0);
+  const lastOvertakeTimeRef = useRef<number>(0);
+  const lastLeaderRef = useRef<number | null>(null);
+  const stableRankingsRef = useRef<Record<number, number>>({});
+  const isIntroTriggered = useRef(false);
+  const isSummaryTriggered = useRef(false);
+  const lastLeadCommentTimeRef = useRef<number>(0);
+  const lastCrowdCommentTimeRef = useRef<number>(0);
+  // Refs to avoid stale closure inside useCallback loop
+  const isStartedRef = useRef(false);
+  const isFinishedRef = useRef(false);
 
   const horsesRef = useRef(horses);
   const simRef = useRef(raceData?.simulation);
@@ -49,8 +71,9 @@ export default function RacePhase() {
 
   useEffect(() => { horsesRef.current = horses; }, [horses]);
   useEffect(() => { simRef.current = raceData?.simulation; }, [raceData?.simulation]);
+  useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commentary]);
 
-  const addLine = useCallback((text: string, type?: string) => {
+  const addLog = useCallback((text: string, type?: string) => {
     setCommentary(p => [...p, { id: Date.now() + Math.random(), text, type }].slice(-50));
   }, []);
 
@@ -75,12 +98,28 @@ export default function RacePhase() {
     
     // Countdown logic
     if (elapsed < 0) {
-      setCountdown(Math.ceil(Math.abs(elapsed) / 1000));
+      const cd = Math.ceil(Math.abs(elapsed) / 1000);
+      setCountdown(cd);
+      
+      // Trigger Intro Commentary when countdown reaches 3 or less
+      if (cd <= 3 && !isIntroTriggered.current) {
+        isIntroTriggered.current = true;
+        const intro = CommentaryGenerator.generateIntro();
+        intro.forEach(text => {
+          setTelop(text);
+          setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+        });
+        addLog('🏁 まもなく発走します');
+      }
+
       rafRef.current = requestAnimationFrame(loop);
       return;
     } else {
       if (countdown !== 0) setCountdown(0);
-      if (!isStarted) setIsStarted(true);
+      if (!isStartedRef.current) {
+        setIsStarted(true);
+        isStartedRef.current = true;
+      }
     }
 
     const totalDur = (sim.stages.length - 1) * STAGE_DUR + GOAL_STAGE_DUR;
@@ -101,15 +140,24 @@ export default function RacePhase() {
       lastStageRef.current = stageIdx;
       const info = sim.stages[stageIdx];
       
-      if (stageIdx === 0 && sim.pace) setPace(sim.pace);
+      if (stageIdx === 0 && sim.pace) {
+        setPace(sim.pace);
+        addLog(`🏁 レース開始 (ペース: ${sim.pace})`);
+      }
 
-      // Generate rich commentary
+      // Generate rich commentary for Telop only
       const newLines = CommentaryGenerator.generate(stageIdx, sim, horsesRef.current);
       newLines.forEach((text, i) => {
         setTimeout(() => {
-          addLine(text, 'live');
           setTelop(text);
-        }, i * 800); // Stagger sentences if multiple
+          setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+        }, i * 1000);
+      });
+
+      // Add plain status logs for special events
+      (info.events || []).forEach((ev: any) => {
+        if (ev.type === 'interference') addLog(`⚠️ ${ev.horse_name} に不利発生`);
+        if (ev.type === 'guts_display') addLog(`🔥 ${ev.horse_name} が根性を見せる`);
       });
     }
 
@@ -130,9 +178,40 @@ export default function RacePhase() {
     if (!winnerCrossedRef.current && horsesInRace.some(h => h.progress >= 1.0)) {
       winnerCrossedRef.current = true;
       const winner = [...horsesInRace].sort((a, b) => b.progress - a.progress)[0];
-      setTelop(`🏁 ${winner.name}、今ゴールイン！！`);
-      addLine(`🏁 ゴール！！ 1着：${winner.name}`, 'finish');
+      const hData = horsesRef.current.find(h => h.horse_number === winner.hn);
+      
+      const finishLines = CommentaryGenerator.generateFinish(winner, hData?.popularity || 1);
+      finishLines.forEach((text, i) => {
+        setTimeout(() => {
+          setTelop(text);
+          setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+        }, i * 1000);
+      });
+
+      addLog(`🏆 1着：${winner.name} 入線`);
+
+      finishedHorsesRef.current.add(winner.hn);
+      lastFinishTimeRef.current = Date.now();
     }
+
+    // Detect Subsequent Finishers with specific logic
+    horsesInRace.forEach(h => {
+      if (h.progress >= 1.0 && !finishedHorsesRef.current.has(h.hn)) {
+        const currentFinishCount = finishedHorsesRef.current.size;
+        const now = Date.now();
+        const timeSinceLast = now - lastFinishTimeRef.current;
+
+        // Rule: Always mention Top 3. 4th+ only if gap >= 2s.
+        if (currentFinishCount < 3 || timeSinceLast >= 2000) {
+          const rank = currentFinishCount + 1;
+          const text = `🏁 ${rank}着：${h.name} 入線`;
+          addLog(text, 'finish');
+          setTelop(text);
+          lastFinishTimeRef.current = now;
+        }
+        finishedHorsesRef.current.add(h.hn);
+      }
+    });
 
     // Handle Finish Order Locking
     const sorted = [...horsesInRace].sort((a, b) => {
@@ -149,6 +228,104 @@ export default function RacePhase() {
     }).map((h, i) => ({ ...h, prevRank: prevRankingsRef.current[h.hn] }));
 
     setRankings(sorted);
+
+    // Overtake & Leader Change Commentary Logic
+    if (isStartedRef.current && !isFinishedRef.current) {
+      const top5 = sorted.slice(0, 5);
+      const leader = top5[0];
+
+      // Initialize stable rankings if empty
+      if (Object.keys(stableRankingsRef.current).length === 0) {
+        sorted.forEach((h, i) => { stableRankingsRef.current[h.hn] = i + 1; });
+      }
+
+      // 1. Leader Change (Highest Priority)
+      if (leader) {
+        if (lastLeaderRef.current !== null && leader.hn !== lastLeaderRef.current) {
+          const hData = horsesRef.current.find(h => h.horse_number === leader.hn);
+          const text = CommentaryGenerator.pick('LEADER_CHANGE', leader.name, hData?.jockey_name);
+          if (text) {
+            setTelop(text);
+            addLog(`🚩 ${leader.name} が先頭に立ちました`);
+            lastLeaderRef.current = leader.hn;
+            // Update all stable ranks to current
+            sorted.forEach((h, i) => { stableRankingsRef.current[h.hn] = i + 1; });
+            setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+          }
+        } else if (lastLeaderRef.current === null) {
+          // Initial leader set
+          lastLeaderRef.current = leader.hn;
+        }
+      }
+      
+      // 2. General Overtake (Top 5, with separate debounce)
+      const overtakeInterval = sorted[0]?.progress > 0.8 ? 1500 : 3000;
+      if (now - lastOvertakeTimeRef.current > overtakeInterval) {
+        let overtakeData: { overtaker: any, target: any } | null = null;
+        
+        for (const h of top5) {
+          const stableRank = stableRankingsRef.current[h.hn] || 99;
+          const currentRank = sorted.indexOf(h) + 1;
+          
+          if (currentRank < stableRank) {
+            // Find who was at this rank in stable rankings
+            const targetHn = Object.keys(stableRankingsRef.current).find(key => stableRankingsRef.current[Number(key)] === currentRank);
+            if (targetHn && Number(targetHn) !== h.hn) {
+              const target = sorted.find(sh => sh.hn === Number(targetHn));
+              if (target) {
+                overtakeData = { overtaker: h, target };
+                break;
+              }
+            }
+          }
+        }
+        
+        if (overtakeData && overtakeData.overtaker.hn !== (leader?.hn || -1)) {
+          const hData = horsesRef.current.find(h => h.horse_number === overtakeData!.overtaker.hn);
+          const text = CommentaryGenerator.pick('OVERTAKE', overtakeData.overtaker.name, hData?.jockey_name, overtakeData.target.name);
+          if (text) {
+            setTelop(text);
+            addLog(`🔄 ${overtakeData.overtaker.name} が ${overtakeData.target.name} を追い越し ${sorted.indexOf(overtakeData.overtaker) + 1}番手に`);
+            lastOvertakeTimeRef.current = now;
+            // Update all stable ranks to current
+            sorted.forEach((h, i) => { stableRankingsRef.current[h.hn] = i + 1; });
+            setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+          }
+        }
+      }
+
+      // 3. Lead Distance Commentary (Dynamic Interval)
+      const leadInterval = sorted[0]?.progress > 0.8 ? 3000 : 6000;
+      if (now - lastLeadCommentTimeRef.current > leadInterval && sorted.length >= 2) {
+        const h1 = sorted[0];
+        const h2 = sorted[1];
+        const dist = h1.progress - h2.progress;
+        
+        let text = "";
+        if (dist > 0.08) { // Large lead
+          text = CommentaryGenerator.pick('LEAD_BIG', h1.name);
+        } else if (dist < 0.01 && h1.progress > 0.2) { // Very close
+          text = CommentaryGenerator.pick('LEAD_CLOSE', h1.name);
+        }
+        
+        if (text) {
+          setTelop(text);
+          lastLeadCommentTimeRef.current = now;
+          setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+        }
+      }
+
+      // 4. Random Crowd Roar (Low prob) - Telop only
+      if (now - lastCrowdCommentTimeRef.current > 10000 && Math.random() < 0.005) {
+        const text = CommentaryGenerator.pick('CROWD_ROAR');
+        if (text) {
+          setTelop(text);
+          lastCrowdCommentTimeRef.current = now;
+          setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+        }
+      }
+    }
+
     prevRankingsRef.current = sorted.reduce((acc, h, i) => ({ ...acc, [h.hn]: i + 1 }), {});
 
     // Trigger commentary based on leader's physical position
@@ -159,10 +336,13 @@ export default function RacePhase() {
       const trigger = (key: string, label: string) => {
         if (!m.has(key)) {
           m.add(key);
-          const text = CommentaryGenerator.pick(label, leader.name);
+          const hData = horsesRef.current.find(h => h.horse_number === leader.hn);
+          const text = CommentaryGenerator.pick(label, leader.name, hData?.jockey_name);
           if (text) {
             setTelop(text);
-            addLine(text, 'live');
+            if (label === 'MIDDLE') addLog('🔄 中間地点通過');
+            if (label === 'FINAL_CORNER') addLog('🔄 最終コーナー進入');
+            if (label === 'HOMESTRETCH') addLog('🔥 最後の直線');
           }
         }
       };
@@ -254,9 +434,19 @@ export default function RacePhase() {
     const allFinished = horsesInRace.every(h => h.progress >= 0.999);
     if (done && allFinished && !doneRef.current) {
       doneRef.current = true;
+      isFinishedRef.current = true;
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       setIsFinished(true);
-      addLine(`🏁 ゴール！！ 1着：${sorted[0].name}`, 'finish');
+      
+      // Race Summary
+      if (!isSummaryTriggered.current) {
+        isSummaryTriggered.current = true;
+        const summary = CommentaryGenerator.generateSummary();
+        summary.forEach(text => {
+          setTelop(text);
+        });
+        addLog('🏁 全馬入線');
+      }
 
       if (useGameStore.getState().role === 'host') {
         nextTimerRef.current = setTimeout(() => {
@@ -266,7 +456,7 @@ export default function RacePhase() {
       return;
     }
     rafRef.current = requestAnimationFrame(loop);
-  }, [addLine, handleNext, raceData?.field_condition]);
+  }, [addLog, handleNext, raceData?.field_condition]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(loop);
@@ -320,7 +510,7 @@ export default function RacePhase() {
           <canvas ref={canvasRef} className="w-full h-full" />
           
           {/* Commentary Telop (On-site feel) */}
-          {telop && isStarted && !isFinished && (
+          {telop && (
             <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-[80%] max-w-3xl z-40 pointer-events-none">
               <div className="bg-black/30 backdrop-blur-md border-t border-white/5 rounded-2xl p-4 shadow-2xl animate-message-in">
                 <p className="text-lg md:text-2xl font-black text-white text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] italic tracking-tight">
@@ -364,13 +554,14 @@ export default function RacePhase() {
             })}
           </div>
           {/* Bottom Live Feed */}
-          <div className="h-28 p-4 bg-black/50 border-t border-white/10 overflow-y-auto text-[10px] space-y-1.5 font-bold text-gray-200 no-scrollbar select-none">
-            {commentary.slice(-5).map(c => (
-              <div key={c.id} className="animate-fade-in truncate flex items-center gap-2 drop-shadow-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-[0_0_4px_#818cf8]" />
-                {c.text}
+          <div className="h-32 p-3 bg-black/60 border-t border-white/10 overflow-y-auto text-[10px] space-y-2 font-bold no-scrollbar select-none scroll-smooth">
+            {commentary.map(c => (
+              <div key={c.id} className="animate-fade-in flex items-start gap-2 drop-shadow-sm">
+                <span className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${c.type === 'finish' ? 'bg-yellow-400 shadow-[0_0_8px_#fbbf24]' : 'bg-indigo-400 shadow-[0_0_4px_#818cf8]'}`} />
+                <span className={`leading-relaxed ${c.type === 'finish' ? 'text-yellow-400' : 'text-gray-300'}`}>{c.text}</span>
               </div>
             ))}
+            <div ref={logEndRef} />
           </div>
         </aside>
       </div>

@@ -94,18 +94,29 @@ export const TITLES: TitleDefinition[] = [
   { id: 'veteran', name: '歴戦の猛者', description: '通算50レース以上参加した', color: 'text-red-800' },
   { id: 'centaur', name: '人馬一体', description: '通算100レース以上参加した', color: 'text-emerald-600' },
   { id: 'loser', name: '負け犬', description: '通算10回以上不的中', color: 'text-gray-600' },
-  { id: 'dev_friend', name: '開発者の友達', description: '開発者と深いつながりを持つ者', color: 'text-cyan-400' },
-  { id: 'hermes', name: 'ヘルメス', description: '情報の神に愛された者', color: 'text-sky-300' },
+  { id: 'unlucky_streak', name: '不運の連鎖', description: '通算20回以上不的中', color: 'text-gray-700' },
+  { id: 'poor', name: '路頭に迷う者', description: '所持金が100C以下になった', color: 'text-orange-900' },
+  { id: 'high_stake', name: '鉄火場の主', description: '1レースに500,000C以上賭けた', color: 'text-red-900' },
+  { id: 'winner_20', name: '重賞請負人', description: '通算20回以上的中させた', color: 'text-emerald-500' },
+  { id: 'whale', name: '海を統べる者', description: '累計払戻額が50,000,000Cを超える', color: 'text-blue-600' },
+  { id: 'dev_friend', name: '開発者の友達', description: 'この世界のコードを書いた者たちの、密かな話し相手。', color: 'text-cyan-400' },
+  { id: 'hermes', name: 'ヘルメス', description: '飛び交う情報、渦巻く思惑。その全てを掌の上で転がす神の伝令。', color: 'text-sky-300' },
   { id: 'debugger', name: 'デバッガー', description: 'システムの綻びを見つける者', color: 'text-red-400' },
   { id: 'gravity_master', name: '重力使い', description: 'Antigravityの加護を受けた者', color: 'text-indigo-500' },
+  { id: 'war_lover', name: 'よろしい、ならば戦争だ', description: 'かくして役者は全員演壇へと登り、暁の惨劇は幕を上げる。', color: 'text-red-700' },
+  { id: 'no_life_king', name: '死なずの君', description: '素敵だ。やはり人間は素晴らしい。', color: 'text-slate-400' },
+  { id: 'keiba_lover', name: 'よろしい、ならば競馬だ', description: '君らの馬の速さは一体どこの誰が保障してくれるのだね? ---私だ。私の、我らの熱狂だ。', color: 'text-emerald-500' },
+  { id: 'last_chance', name: '背水の陣', description: '所持金が10C以下の状態で的中させた', color: 'text-orange-600' },
+  { id: 'jackpot_777', name: 'ラッキー・セブン・フィーバー', description: '所持金がちょうど777C、または7777Cになった', color: 'text-yellow-500' },
+  { id: 'all_or_nothing', name: '極限の勝負師', description: '全財産を賭けて、100倍以上の配当を手にした', color: 'text-red-600' },
 ];
 // horse_generator が必要とする定数
 // (元々 constants.ts になかったため horse_generator の import エラーになっていた)
 export const RARITY_DISTRIBUTION: Record<string, { weight: number; mean: number; std: number }> = {
-  Common:    { weight: 60, mean: 45, std: 10 },
-  Rare:      { weight: 25, mean: 60, std: 8  },
-  Epic:      { weight: 12, mean: 75, std: 6  },
-  Legendary: { weight: 3,  mean: 88, std: 4  },
+  Common: { weight: 60, mean: 45, std: 10 },
+  Rare: { weight: 25, mean: 60, std: 8 },
+  Epic: { weight: 12, mean: 75, std: 6 },
+  Legendary: { weight: 3, mean: 88, std: 4 },
 };
 
 export const WILD_HORSE_STYLE = '暴れ馬';
