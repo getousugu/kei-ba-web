@@ -101,3 +101,17 @@ export async function drawHorsesFromPool(count: number): Promise<HorseRecord[]> 
   // Return horses with their DB IDs
   return all.slice(0, count);
 }
+/** 出走数に応じた引退判定 (Bot版と同じ確率設定) */
+export async function checkRetirement(horseId: number, totalRaces: number): Promise<boolean> {
+  let prob = 0;
+  if (totalRaces < 10) prob = 0;
+  else if (totalRaces < 15) prob = 0.10;
+  else if (totalRaces < 20) prob = 0.35;
+  else prob = 0.85;
+
+  if (Math.random() < prob) {
+    await db.horses.delete(horseId);
+    return true;
+  }
+  return false;
+}

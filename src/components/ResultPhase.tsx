@@ -2,22 +2,21 @@ import { useEffect, useState, useMemo } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { peerManager } from '../network/peerManager';
 import { oddsCalculator } from '../core/odds_calculator';
-import { db } from '../db/db';
-
-const HORSE_COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
-  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e',
-  '#84cc16', '#0ea5e9', '#a855f7', '#fb923c', '#10b981',
-  '#6366f1', '#e11d48', '#0891b2',
-];
+import { HORSE_COLORS } from '../core/constants';
+import { db, checkRetirement } from '../db/db';
 
 const MEDAL = ['🥇', '🥈', '🥉'];
 
 export default function ResultPhase() {
-  const { raceData, myBets, myCoins, role, horses, participants, rematchVotes } = useGameStore();
+  const {
+    raceData, myBets, myCoins, role, horses, participants, rematchVotes,
+    win5Data, setWin5Data, roomCarryover, setRoomCarryover, win5Debug, setPhase
+  } = useGameStore();
   const [totalPayout, setTotalPayout] = useState(0);
   const [paid, setPaid] = useState(false);
   const [myVote, setMyVote] = useState<'continue' | 'end' | null>(null);
+  const [hasCashedOut, setHasCashedOut] = useState(false);
+  const [win5Message, setWin5Message] = useState<string | null>(null);
 
   const simulation = raceData?.simulation;
   const results: any[] = simulation?.results || [];
@@ -39,19 +38,23 @@ export default function ResultPhase() {
       else if (bet.bet_type === '馬単') isHit = nums[0] === first && nums[1] === second;
       else if (bet.bet_type === '3連複') isHit = nums.includes(first) && nums.includes(second) && nums.includes(third);
       else if (bet.bet_type === '3連単') isHit = nums[0] === first && nums[1] === second && nums[2] === third;
+      else if (bet.bet_type === 'WIN5') {
+        // デバッグモードがONなら強制的中、OFFなら着順通り
+        isHit = win5Debug ? true : (nums[0] === first);
+      }
 
       const payoutOdds = isHit ? oddsCalculator.calculatePayoutOdds(bet.bet_type, nums, horses) : 0;
       const payout = Math.floor(bet.amount * payoutOdds);
       return { ...bet, isHit, payout, payoutOdds };
     });
-  }, [myBets, results, horses]);
+  }, [myBets, results, horses, win5Debug]);
 
   useEffect(() => {
-    if (paid) return;
+    if (paid || !hitDetails.length) return;
     const total = hitDetails.reduce((s, d) => s + d.payout, 0);
     setTotalPayout(total);
     if (total > 0) {
-      const newBal = myCoins + total;
+      const newBal = useGameStore.getState().myCoins + total;
       useGameStore.getState().setMyCoins(newBal);
       // コイン変動をホストに報告
       peerManager.reportCoinsToHost(newBal);
@@ -87,12 +90,13 @@ export default function ResultPhase() {
                 losses: (record.record.losses || 0) + (idx > 2 ? 1 : 0),
               } : undefined
             });
+
+            // 引退チェック (Bot版と同じロジックを適用)
+            await checkRetirement(horse.id, newTotal);
           }
         }
       });
     }
-
-    setPaid(true);
 
     // --- Title Unlock Logic ---
     const s = useGameStore.getState();
@@ -102,6 +106,12 @@ export default function ResultPhase() {
     newStats.totalRaces += 1;
     const sessionWins = hitDetails.filter(d => d.isHit).length;
     if (sessionWins > 0) newStats.totalWins += sessionWins;
+
+    // 万馬券（100倍以上）のチェック
+    const isManbaken = hitDetails.some(d => d.isHit && (d.payout / (d.amount || 1)) >= 100);
+    if (isManbaken) {
+      // 演出はUI側でhitDetailsを参照して行われる
+    }
 
     const sessionMaxOdds = Math.max(...hitDetails.map(d => d.isHit ? d.payoutOdds : 0), 0);
     newStats.maxPayoutOdds = Math.max(newStats.maxPayoutOdds, sessionMaxOdds);
@@ -120,6 +130,8 @@ export default function ResultPhase() {
     if (s.myCoins >= 1000000) s.unlockTitle('billionaire');
     else if (s.myCoins >= 500000) s.unlockTitle('rich');
     else if (s.myCoins >= 100000) s.unlockTitle('millionaire');
+
+    if (win5Data?.isActive) s.unlockTitle('win5_survivor');
 
     if (s.myCoins <= 100) s.unlockTitle('poor');
     else if (s.myCoins <= 1000) s.unlockTitle('bankrupt');
@@ -169,9 +181,57 @@ export default function ResultPhase() {
       const resolvedTitle = s.playerTitle === '称号コレクター' ? `${s.ownedTitles.length}冠の覇者` : s.playerTitle;
       peerManager.sendToHost({ type: 'update_profile', title: resolvedTitle });
     }
-    // Bug-15: hitDetails の内容変化にも反応するよう hitDetails 自体を依存配列に使い、
-    // paid flag で発火一回のみに制限する
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // --- WIN5 Survival Processing (Host Only) ---
+    if (role === 'host' && win5Data?.isActive && !paid) {
+      setTimeout(() => {
+        const first = results[0]?.horse_number;
+        const allBets = useGameStore.getState().hostBetPool;
+
+        // 的中者（サバイバー）の抽出
+        const currentSurvivors = win5Data.survivors;
+        const nextSurvivors: string[] = [];
+
+        currentSurvivors.forEach(sid => {
+          const sBet = allBets.find(b => b.playerId === sid && b.bet_type === 'WIN5');
+          // 的中判定 (デバッグトグル優先)
+          const isHit = win5Debug || (sBet && sBet.horse_numbers[0] === first);
+          if (isHit) nextSurvivors.push(sid);
+        });
+
+        const isLastRace = win5Debug || win5Data.currentRace === 5;
+        const noSurvivors = nextSurvivors.length === 0;
+
+        if (isLastRace || noSurvivors) {
+          // WIN5終了処理
+          let message = "";
+          if (noSurvivors) {
+            message = "全員脱落しました。キャリーオーバー発生！";
+            const newCarry = roomCarryover + win5Data.totalPrize;
+            setRoomCarryover(newCarry);
+            peerManager.broadcast({ type: 'win5_carryover_update', val: newCarry });
+          } else if (isLastRace) {
+            message = `WIN5達成！的中者: ${nextSurvivors.length}名`;
+            const share = Math.floor((win5Data.totalPrize + roomCarryover) / nextSurvivors.length);
+            // 5点的中者の賞金分配は、ここではステート更新のみ通知
+            // (実際のコイン加算はクライアント側で行う)
+            setRoomCarryover(0);
+            peerManager.broadcast({ type: 'win5_carryover_update', val: 0 });
+          }
+
+          const updatedWin5 = { ...win5Data, survivors: nextSurvivors, isCompleted: true };
+          setWin5Data(updatedWin5);
+          peerManager.broadcast({ type: 'win5_update', data: updatedWin5 });
+          setWin5Message(message);
+        } else {
+          // 次のレースへ
+          const updatedWin5 = { ...win5Data, survivors: nextSurvivors, currentRace: win5Data.currentRace + 1 };
+          setWin5Data(updatedWin5);
+          peerManager.broadcast({ type: 'win5_update', data: updatedWin5 });
+        }
+      }, 1000);
+    }
+
+    setPaid(true);
   }, [hitDetails]);
 
   const handleVote = (vote: 'continue' | 'end') => {
@@ -190,7 +250,10 @@ export default function ResultPhase() {
     useGameStore.getState().updateHorses([]);
     useGameStore.getState().setBettingEndTime(null); // Reset timer
     useGameStore.getState().setRematchVotes({ continue: [], end: [] });
-    if (role === 'host') peerManager.broadcast({ type: 'phase_start', phase: 'lobby' });
+    if (role === 'host') {
+      peerManager.broadcast({ type: 'participants_update', participants: useGameStore.getState().participants });
+      peerManager.broadcast({ type: 'phase_start', phase: 'lobby' });
+    }
   };
 
   /** 同じレース条件で馬プールから再抽選して再レース */
@@ -200,11 +263,20 @@ export default function ResultPhase() {
     const rd = s.raceData;
     if (!rd) return;
 
+    // WIN5開催中の場合は設定を固定
+    const nextSettings = win5Data?.isActive ? {
+      ...settings,
+      distance: 'random',
+      fieldCondition: 'random',
+      weather: 'random',
+      bettingTime: 180
+    } : settings;
+
     // --- 条件の決定 (おまかせ設定の場合は再抽選する) ---
     const { FIELD_CONDITIONS, DISTANCE_CATEGORIES } = await import('../core/constants');
 
     let nextDistance = rd.distance;
-    if (settings.distance === 'random') {
+    if (nextSettings.distance === 'random') {
       const distKeys = Object.keys(DISTANCE_CATEGORIES);
       const distanceCat = distKeys[Math.floor(Math.random() * distKeys.length)];
       const [lo, hi] = DISTANCE_CATEGORIES[distanceCat];
@@ -212,12 +284,12 @@ export default function ResultPhase() {
     }
 
     let nextFC = rd.field_condition;
-    if (settings.fieldCondition === 'random') {
+    if (nextSettings.fieldCondition === 'random') {
       nextFC = FIELD_CONDITIONS[Math.floor(Math.random() * FIELD_CONDITIONS.length)];
     }
 
     let nextWeather = rd.weather;
-    if (settings.weather === 'random') {
+    if (nextSettings.weather === 'random') {
       const wList = ['晴', '曇', '雨', '雪'];
       nextWeather = wList[Math.floor(Math.random() * wList.length)];
     }
@@ -227,13 +299,13 @@ export default function ResultPhase() {
     const { drawHorsesFromPool } = await import('../db/db');
     const { oddsCalculator: oc } = await import('../core/odds_calculator');
 
-    const count = settings.horseCount || s.horses.length || 12;
+    const count = nextSettings.horseCount || s.horses.length || 12;
     const drawn = await drawHorsesFromPool(count);
     const freshHorses = drawn.map((h, i) => ({ ...h, horse_number: i + 1 }));
     freshHorses.forEach(h => {
       (h as any).score = oc.calculateCompositeScore(h, nextDistance, nextFC, nextCourseFeature);
     });
-    const horsesWithOdds = oc.calculateInitialOdds(freshHorses, settings.realOdds);
+    const horsesWithOdds = oc.calculateInitialOdds(freshHorses, nextSettings.realOdds);
     const freshRaceData = {
       distance: nextDistance,
       field_condition: nextFC,
@@ -249,7 +321,7 @@ export default function ResultPhase() {
     s.setBettingEndTime(null);
     s.setRematchVotes({ continue: [], end: [] });
 
-    const endTime = Date.now() + (settings.bettingTime || 120) * 1000;
+    const endTime = Date.now() + (nextSettings.bettingTime || 120) * 1000;
     s.setBettingEndTime(endTime);
     s.setPhase('betting');
 
@@ -259,8 +331,65 @@ export default function ResultPhase() {
       horses: horsesWithOdds,
       raceData: freshRaceData,
       bettingEndTime: endTime,
-      settings: settings,
+      settings: nextSettings,
     });
+  };
+
+  const handleWin5Cashout = () => {
+    if (hasCashedOut || !win5Data) return;
+
+    // 現在のレース番号。1戦目終了後は currentRace が 2 になっている想定
+    // もしホストの更新がまだなら、現在のレースが的中しているかを確認
+    const isHitThisRace = hitDetails.some(d => d.bet_type === 'WIN5' && d.isHit);
+    if (!isHitThisRace && win5Data.currentRace === 1) return; // まだ1戦目も終わっていない
+
+    const hitCount = win5Data.currentRace - (isHitThisRace ? 0 : 1);
+    // 上記だと少し複雑なので、シンプルに「これまでの的中数」を確実に取る
+    // ホストが更新済みなら currentRace - 1、未更新なら currentRace そのもの
+    // ただし、的中していないのにキャッシュアウトはできないはず。
+
+    const actualHitCount = hitDetails.some(d => d.bet_type === 'WIN5' && d.isHit)
+      ? Math.max(win5Data.currentRace, 1)
+      : win5Data.currentRace - 1;
+
+    if (actualHitCount <= 0) return;
+
+    const entryCount = participants.length;
+    // 的中数 × 6.5% を分配
+    const share = Math.floor((win5Data.totalPrize / entryCount) * (actualHitCount * 0.065));
+
+    if (share > 0) {
+      const newBal = myCoins + share;
+      useGameStore.getState().setMyCoins(newBal);
+      peerManager.reportCoinsToHost(newBal);
+
+      // ホストに賞金総額の減少を通知
+      peerManager.sendToHost({ type: 'win5_cashout_report', amount: share });
+    }
+
+    setHasCashedOut(true);
+    // サバイバーリストから自分を削除
+    const nextSurvivors = win5Data.survivors.filter(id => id !== peerManager.myPeerId);
+    const updatedWin5 = { ...win5Data, survivors: nextSurvivors };
+    setWin5Data(updatedWin5);
+    peerManager.broadcast({ type: 'win5_update', data: updatedWin5 });
+  };
+
+  const handleCloseWin5 = () => {
+    setWin5Data(null);
+    peerManager.broadcast({ type: 'win5_update', data: null });
+    handleBackToLobby();
+  };
+
+  const handleWin5Win = () => {
+    if (!win5Data) return;
+    const share = Math.floor((win5Data.totalPrize + roomCarryover) / win5Data.survivors.length);
+    const newBal = myCoins + share;
+    useGameStore.getState().setMyCoins(newBal);
+    useGameStore.getState().unlockTitle('win5_champion');
+    useGameStore.getState().unlockTitle('win5_legend');
+    peerManager.reportCoinsToHost(newBal);
+    handleCloseWin5();
   };
 
   const totalBetAmount = myBets.reduce((s, b) => s + b.amount, 0);
@@ -306,31 +435,46 @@ export default function ResultPhase() {
             )}
             <button onClick={handleRematch}
               className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg transition-all active:scale-95">
-              🔄 同条件で再レース
+              🔄 {win5Data?.isActive ? `第${win5Data.currentRace}関門へ` : '同条件で再レース'}
             </button>
-            <button onClick={handleBackToLobby}
-              className="px-4 py-2 bg-[#2a2a32] hover:bg-[#35353f] text-gray-300 font-bold text-xs rounded-lg transition-all">
-              ← ロビーに戻る
-            </button>
+            {!win5Data?.isActive && (
+              <button onClick={handleBackToLobby}
+                className="px-4 py-2 bg-[#2a2a32] hover:bg-[#35353f] text-gray-300 font-bold text-xs rounded-lg transition-all">
+                ← ロビーに戻る
+              </button>
+            )}
           </div>
         )}
 
         {/* Client actions — Bug-14: 'client' -> 'guest' に修正 */}
         {role === 'guest' && (
           <div className="flex items-center gap-3">
-            <div style={{ fontSize: 11 }} className="text-gray-400 font-black flex flex-col items-end">
-              <span>{myVote ? (
-                <span className="text-gray-400">投票済み：{myVote === 'continue' ? '継続を要請' : '終了を要請'}</span>
-              ) : 'ホストへ要請を送る'}</span>
-            </div>
-            <button onClick={() => handleVote('continue')} disabled={!!myVote}
-              className={`px-4 py-2 font-bold text-xs rounded-lg transition-all ${myVote === 'continue' ? 'bg-emerald-700 text-white' : myVote ? 'bg-[#2a2a32] text-gray-600 cursor-not-allowed' : 'bg-emerald-800/50 hover:bg-emerald-700 text-emerald-300 active:scale-95'}`}>
-              👍 継続を要請
-            </button>
-            <button onClick={() => handleVote('end')} disabled={!!myVote}
-              className={`px-4 py-2 font-bold text-xs rounded-lg transition-all ${myVote === 'end' ? 'bg-red-800 text-white' : myVote ? 'bg-[#2a2a32] text-gray-600 cursor-not-allowed' : 'bg-red-900/40 hover:bg-red-800/70 text-red-400 active:scale-95'}`}>
-              👎 終了を要請
-            </button>
+            {!win5Data?.isActive && (
+              <>
+                <div style={{ fontSize: 11 }} className="text-gray-400 font-black flex flex-col items-end">
+                  <span>{myVote ? (
+                    <span className="text-gray-400">投票済み：{myVote === 'continue' ? '継続を要請' : '終了を要請'}</span>
+                  ) : 'ホストへ要請を送る'}</span>
+                </div>
+                <button onClick={() => handleVote('continue')} disabled={!!myVote}
+                  className={`px-4 py-2 font-bold text-xs rounded-lg transition-all ${myVote === 'continue' ? 'bg-emerald-700 text-white' : myVote ? 'bg-[#2a2a32] text-gray-600 cursor-not-allowed' : 'bg-emerald-800/50 hover:bg-emerald-700 text-emerald-300 active:scale-95'}`}>
+                  👍 継続を要請
+                </button>
+                <button onClick={() => handleVote('end')} disabled={!!myVote}
+                  className={`px-4 py-2 font-bold text-xs rounded-lg transition-all ${myVote === 'end' ? 'bg-red-800 text-white' : myVote ? 'bg-[#2a2a32] text-gray-600 cursor-not-allowed' : 'bg-red-900/40 hover:bg-red-800/70 text-red-400 active:scale-95'}`}>
+                  👎 終了を要請
+                </button>
+                <button onClick={handleBackToLobby}
+                  className="px-4 py-2 bg-[#2a2a32] hover:bg-[#35353f] text-gray-300 font-bold text-xs rounded-lg transition-all ml-2">
+                  ロビーで待機
+                </button>
+              </>
+            )}
+            {win5Data?.isActive && (
+              <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest bg-white/5 px-4 py-2 rounded-xl border border-white/5">
+                WIN5 進行中: 第{win5Data.currentRace}関門
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -427,34 +571,147 @@ export default function ResultPhase() {
           </div>
 
           {/* ── Ticket detail ── */}
-          {hitDetails.length > 0 && (
+          {(hitDetails.length > 0 || win5Data?.isActive) && (
             <section className="panel rounded-xl overflow-hidden">
               <div className="panel-header bg-[#202028] text-gray-300 flex justify-between font-black uppercase tracking-widest">
-                <span>馬券明細</span>
-                <span>{myBets.length}件 · 投資 {totalBetAmount.toLocaleString()}C</span>
+                <span>馬券明細 / WIN5状況</span>
+                <span>投資 {totalBetAmount.toLocaleString()}C</span>
               </div>
               <div className="divide-y divide-[#1e1e22]">
                 {hitDetails.map((d, i) => (
-                  <div key={i} className={`flex items-center justify-between px-4 py-3 animate-fade-in ${d.isHit ? 'bg-yellow-500/5' : ''}`} style={{ animationDelay: `${i * 30}ms` }}>
+                  <div key={i} className={`flex items-center justify-between px-4 py-3 animate-fade-in ${d.isHit ? 'bg-yellow-500/5' : ''}`}>
                     <div className="flex items-center gap-3">
-                      <span className={`bet-chip ${d.isHit ? '!bg-yellow-500 !text-black' : ''}`}>{d.bet_type}</span>
+                      <span className={`bet-chip ${d.isHit ? (d.bet_type === 'WIN5' ? '!bg-emerald-500 !text-black' : '!bg-yellow-500 !text-black') : ''}`}>{d.bet_type}</span>
                       <span className="font-mono font-black text-gray-200 tabular">{d.horse_numbers.join('-')}</span>
                       <span className="text-gray-500 text-xs font-bold">{d.amount.toLocaleString()}C</span>
                     </div>
                     <div className="text-right">
                       <div className={`font-mono font-black tabular ${d.isHit ? 'text-yellow-500' : 'text-gray-600'}`}>
-                        {d.isHit ? `+${d.payout.toLocaleString()}C` : 'ハズレ'}
+                        {d.isHit ? (d.bet_type === 'WIN5' ? 'サバイバル成功！' : `+${d.payout.toLocaleString()}C`) : 'ハズレ / 脱落'}
                       </div>
-                      {d.isHit && <div style={{ fontSize: 10 }} className="text-yellow-600 font-black">{d.payoutOdds.toFixed(1)}倍</div>}
+                      {d.isHit && d.bet_type !== 'WIN5' && <div style={{ fontSize: 10 }} className="text-yellow-600 font-black">{d.payoutOdds.toFixed(1)}倍</div>}
                     </div>
                   </div>
                 ))}
+                {win5Data?.isActive && (
+                  <div className="bg-[#111114] p-4">
+                    <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-3">Survivor Log</div>
+                    <div className="space-y-2">
+                      {participants.map(p => {
+                        const isSurvivor = win5Data.survivors.includes(p.id);
+                        return (
+                          <div key={p.id} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={isSurvivor ? 'text-white' : 'text-gray-600 line-through'}>{p.name}</span>
+                              {isSurvivor ? (
+                                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-black border border-emerald-500/20 uppercase">Survivor</span>
+                              ) : (
+                                <span className="text-[9px] bg-red-500/10 text-red-700 px-1.5 py-0.5 rounded font-black border border-red-500/10 uppercase">Eliminated</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {win5Data.survivors.includes(peerManager.myPeerId || '') && !win5Data.isCompleted && (
+                      <button
+                        onClick={handleWin5Cashout}
+                        disabled={hasCashedOut}
+                        className="w-full mt-4 py-2 bg-yellow-600/20 hover:bg-yellow-600/40 text-yellow-500 border border-yellow-600/30 rounded-lg text-xs font-black uppercase tracking-widest transition-all"
+                      >
+                        {hasCashedOut ? 'キャッシュアウト済み' : 'WIN5から降りる (キャッシュアウト)'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </section>
           )}
 
         </div>
       </div>
+
+      {/* WIN5 Special Overlays - PREMIUM VERSION */}
+      {win5Data?.isCompleted && (
+        <div className="absolute inset-0 z-[200] flex items-center justify-center overflow-hidden">
+          {/* Background effects */}
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-xl animate-fade-in" />
+
+          {/* Animated golden rays */}
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none">
+            <div className="w-[200%] h-[200%] bg-[conic-gradient(from_0deg,transparent_45deg,rgba(234,179,8,0.1)_90deg,transparent_135deg)] animate-spin-slow opacity-20" />
+          </div>
+
+          <div className="relative w-full max-w-2xl px-6 animate-pop-in">
+            {win5Data.survivors.length > 0 ? (
+              <div className="bg-[#1a1a20] border border-yellow-500/30 rounded-[48px] shadow-[0_0_100px_rgba(234,179,8,0.2)] overflow-hidden">
+                <div className="bg-gradient-to-b from-yellow-500/10 to-transparent p-12 text-center space-y-10">
+
+                  <div className="relative inline-block">
+                    <div className="text-8xl mb-2 animate-bounce-subtle drop-shadow-[0_0_30px_rgba(234,179,8,0.5)]">👑</div>
+                    <div className="absolute -inset-8 bg-yellow-500/20 blur-3xl rounded-full animate-pulse" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <h2 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-yellow-500 to-yellow-700 tracking-tighter uppercase italic leading-tight">
+                      WIN5 Complete
+                    </h2>
+                    <div className="h-1 w-32 bg-gradient-to-r from-transparent via-yellow-500 to-transparent mx-auto" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-left">
+                    <div className="p-6 bg-white/5 rounded-3xl border border-white/10 backdrop-blur-sm">
+                      <div className="text-gray-500 font-black uppercase tracking-widest text-[9px] mb-2">Survivors</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {win5Data.survivors.map(id => (
+                          <span key={id} className="px-3 py-1 bg-yellow-500 text-black text-[10px] font-black rounded-full">
+                            {participants.find(p => p.id === id)?.name || 'Player'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="p-6 bg-yellow-500/10 rounded-3xl border border-yellow-500/20 backdrop-blur-sm">
+                      <div className="text-yellow-600 font-black uppercase tracking-widest text-[9px] mb-2">Total Prize Pool</div>
+                      <div className="text-4xl font-black text-yellow-500 font-mono tracking-tighter">
+                        {Math.floor((win5Data.totalPrize + roomCarryover) / win5Data.survivors.length).toLocaleString()}<span className="text-lg ml-1">C</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 space-y-4">
+                    {win5Data.survivors.includes(peerManager.myPeerId || '') ? (
+                      <button onClick={handleWin5Win}
+                        className="group relative w-full py-5 bg-gradient-to-b from-yellow-400 to-yellow-600 text-black font-black rounded-2xl shadow-2xl shadow-yellow-500/40 transition-all hover:scale-[1.02] active:scale-95 text-xl overflow-hidden">
+                        <span className="relative z-10">配当を受け取って帰還する</span>
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                      </button>
+                    ) : (
+                      <button onClick={handleCloseWin5} className="w-full py-5 bg-white/5 hover:bg-white/10 text-gray-400 font-black rounded-2xl transition-all">
+                        栄光を称えて終了
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-[#1a1a20] border border-red-500/20 rounded-[48px] p-16 text-center space-y-8">
+                <div className="text-8xl grayscale opacity-50 mb-4">💀</div>
+                <div className="space-y-2">
+                  <h2 className="text-5xl font-black text-red-500 tracking-tighter uppercase italic">WIN5 Failed</h2>
+                  <p className="text-gray-500 font-bold">生存者ゼロ... 賞金はキャリーオーバーされます</p>
+                </div>
+                <div className="p-8 bg-red-500/5 rounded-3xl border border-red-500/10">
+                  <div className="text-4xl font-black text-white font-mono tracking-tighter">+{win5Data.totalPrize.toLocaleString()} C</div>
+                </div>
+                <button onClick={handleCloseWin5} className="w-full py-5 bg-white/5 hover:bg-white/10 text-gray-400 font-black rounded-2xl transition-all">
+                  無念の帰還
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

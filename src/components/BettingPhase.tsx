@@ -1,19 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { peerManager } from '../network/peerManager';
-import { RARITY_EMOJI } from '../core/constants';
+import { RARITY_EMOJI, HORSE_COLORS } from '../core/constants';
 import { oddsCalculator } from '../core/odds_calculator';
 import type { Bet } from '../core/odds_calculator';
 import { raceSimulator } from '../core/race_simulator';
 
 const BET_TYPES = ['単勝', '複勝', '馬連', 'ワイド', '馬単', '3連複', '3連単'];
-
-const HORSE_COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
-  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e',
-  '#84cc16', '#0ea5e9', '#a855f7', '#fb923c', '#10b981',
-  '#6366f1', '#e11d48', '#0891b2',
-];
 
 const APT_COLOR: Record<string, string> = { A: '#22c55e', B: '#84cc16', C: '#eab308', D: '#f97316', E: '#ef4444' };
 const COND_COLOR: Record<string, string> = { 絶好調: '#22c55e', 好調: '#84cc16', 普通: '#9ca3af', 不調: '#f97316', 絶不調: '#ef4444' };
@@ -32,7 +25,10 @@ function BlockBar({ value }: { value: number }) {
 }
 
 export default function BettingPhase() {
-  const { horses, raceData, role, myCoins, myBets, addBet, chatMessages, addChatMessage, bettingEndTime, isSpectator, roomSettings } = useGameStore();
+  const { 
+    horses, raceData, role, myCoins, myBets, addBet, chatMessages, addChatMessage, 
+    bettingEndTime, isSpectator, roomSettings, win5Data, setWin5Data 
+  } = useGameStore();
 
   const [betType, setBetType] = useState(BET_TYPES[0]);
   const [buyMode, setBuyMode] = useState<'通常' | 'ボックス' | '流し'>('通常');
@@ -132,13 +128,18 @@ export default function BettingPhase() {
     };
   }, [bettingEndTime, startRace]);
 
-  const maxSel = ['単勝', '複勝'].includes(betType) ? 1 : ['馬連', 'ワイド', '馬単'].includes(betType) ? 2 : 3;
+  const maxSel = ['単勝', '複勝', 'WIN5'].includes(betType) ? 1 : ['馬連', 'ワイド', '馬単'].includes(betType) ? 2 : 3;
 
   const resetAndSetMode = (m: '通常' | 'ボックス' | '流し') => { setBuyMode(m); setSelected([]); };
   const resetAndSetType = (t: string) => { setBetType(t); setSelected([]); };
 
-  // Bug-11: timeLeft===0 は state の遅延があるため、直接 Date.now() と比較する
   const isBettingClosed = () => bettingEndTime !== null && Date.now() >= bettingEndTime;
+
+  const isWin5Active = win5Data?.isActive;
+  const isSurvivor = win5Data?.survivors.includes(peerManager.myPeerId || '');
+  const hasAlreadyBetWin5 = myBets.some(b => b.bet_type === 'WIN5');
+
+  const currentBetTypes = (isWin5Active && isSurvivor) ? [...BET_TYPES, 'WIN5'] : BET_TYPES;
 
   const handleHorseSelect = (hn: number) => {
     if (isBettingClosed()) return; // Locked
@@ -176,11 +177,16 @@ export default function BettingPhase() {
   };
 
   const combos = getCombinations();
-  const effectiveBetAmount = betAmount || 100;
+  const effectiveBetAmount = betType === 'WIN5' ? 0 : (betAmount || 100);
   const totalCost = combos.length * effectiveBetAmount;
 
   const handlePurchase = () => {
-    if (isBettingClosed() || !combos.length || totalCost > myCoins || effectiveBetAmount <= 0) return;
+    if (isBettingClosed() || !combos.length || totalCost > myCoins) return;
+    if (betType !== 'WIN5' && effectiveBetAmount <= 0) return;
+    if (betType === 'WIN5' && hasAlreadyBetWin5) {
+      alert('WIN5は1レースにつき1枚しか購入できません');
+      return;
+    }
     const newCoins = myCoins - totalCost;
     useGameStore.getState().setMyCoins(newCoins);
     const role = useGameStore.getState().role;
@@ -197,7 +203,18 @@ export default function BettingPhase() {
       // Bug-10: ホストの場合は sendToHost を呼ばず直接 hostBetPool に追加
       // (sendToHost → handleIncomingData → setHostBetPool で2重追加になるため)
       if (role === 'host') {
-        useGameStore.getState().setHostBetPool([...useGameStore.getState().hostBetPool, bet]);
+        const s = useGameStore.getState();
+        const nextPool = [...s.hostBetPool, bet];
+        s.setHostBetPool(nextPool);
+        
+        // WIN5の購入なら賞金プールに加算 (ホスト自身)
+        if (betType === 'WIN5' && s.win5Data) {
+          const nextWin5 = { ...s.win5Data, totalPrize: s.win5Data.totalPrize + effectiveBetAmount };
+          s.setWin5Data(nextWin5);
+          peerManager.broadcast({ type: 'win5_update', data: nextWin5 });
+        }
+
+        peerManager.recalculateAndBroadcastOdds(nextPool);
       } else {
         peerManager.sendToHost({ type: 'place_bet', bet });
       }
@@ -222,7 +239,7 @@ export default function BettingPhase() {
   };
 
   const handleCancelBet = (bet: Bet) => {
-    if (isBettingClosed()) return;
+    if (isBettingClosed() || bet.bet_type === 'WIN5') return;
     const newCoins = myCoins + bet.amount;
     useGameStore.getState().setMyCoins(newCoins);
     useGameStore.getState().removeBet(bet.id);
@@ -414,10 +431,10 @@ export default function BettingPhase() {
                     </div>
                     <button
                       onClick={() => handleCancelBet(bet)}
-                      disabled={isBettingClosed()}
+                      disabled={isBettingClosed() || bet.bet_type === 'WIN5'}
                       className="px-3 py-1.5 bg-red-900/30 hover:bg-red-800/50 text-red-400 text-[10px] font-black rounded border border-red-900/50 transition-all disabled:opacity-20"
                     >
-                      キャンセル
+                      {bet.bet_type === 'WIN5' ? '確定済み' : 'キャンセル'}
                     </button>
                   </div>
                 ))}
@@ -426,12 +443,15 @@ export default function BettingPhase() {
           )}
           <div className="border-t border-[#2a2a32] bg-[#161618] px-4 py-3 shrink-0">
             <div className="flex flex-wrap gap-1 mb-2">
-              {BET_TYPES.map(t => (
-                <button key={t} onClick={() => resetAndSetType(t)} disabled={isBettingClosed()}
-                  className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${betType === t ? 'bg-indigo-600 text-white' : 'bg-[#2a2a32] text-gray-500 hover:bg-[#35353f]'} disabled:opacity-30`}>{t}</button>
+              {currentBetTypes.map(t => (
+                <button key={t} onClick={() => resetAndSetType(t)} 
+                  disabled={isBettingClosed() || (t === 'WIN5' && (!isSurvivor || hasAlreadyBetWin5))}
+                  className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${betType === t ? (t === 'WIN5' ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white') : 'bg-[#2a2a32] text-gray-500 hover:bg-[#35353f]'} disabled:opacity-20`}>
+                  {t}
+                </button>
               ))}
               <div className="flex-1" />
-              {(['通常', 'ボックス', '流し'] as const).map(m => (
+              {betType !== 'WIN5' && (['通常', 'ボックス', '流し'] as const).map(m => (
                 <button key={m} onClick={() => resetAndSetMode(m)} disabled={isBettingClosed()}
                   className={`px-2 py-1 rounded text-xs font-bold border transition-all ${buyMode === m ? 'border-gray-500 bg-[#2a2a32] text-white' : 'border-[#2a2a32] text-gray-600 hover:border-gray-500'} disabled:opacity-30`}>{m}</button>
               ))}
@@ -446,28 +466,32 @@ export default function BettingPhase() {
                 <div style={{ fontSize: 10 }} className="text-gray-400 font-bold mb-1 flex justify-between">
                   <span>1点あたりの金額</span>
                   <div className="flex gap-1 ml-4">
-                    {[100, 500, 1000, 5000].map(amt => (
+                    {betType !== 'WIN5' && [100, 500, 1000, 5000].map(amt => (
                       <button key={amt} onClick={() => setBetAmount(prev => prev + amt)} disabled={isBettingClosed()}
                         className="px-1.5 py-0.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[9px] font-black rounded border border-indigo-500/20 transition-all">
                         +{amt.toLocaleString()}
                       </button>
                     ))}
-                    <button onClick={() => setBetAmount(Math.floor(myCoins / (combos.length || 1)))} disabled={isBettingClosed() || !combos.length}
-                      className="px-1.5 py-0.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 text-[9px] font-black rounded border border-yellow-500/20 transition-all">
-                      MAX
-                    </button>
-                    <button onClick={() => setBetAmount(0)} disabled={isBettingClosed()}
-                      className="px-1.5 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[9px] font-black rounded border border-red-500/20 transition-all">
-                      CLR
-                    </button>
+                    {betType !== 'WIN5' && (
+                      <>
+                        <button onClick={() => setBetAmount(Math.floor(myCoins / (combos.length || 1)))} disabled={isBettingClosed() || !combos.length}
+                          className="px-1.5 py-0.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 text-[9px] font-black rounded border border-yellow-500/20 transition-all">
+                          MAX
+                        </button>
+                        <button onClick={() => setBetAmount(0)} disabled={isBettingClosed()}
+                          className="px-1.5 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[9px] font-black rounded border border-red-500/20 transition-all">
+                          CLR
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <input type="number" min="0" step="100" value={betAmount || ''} 
+                  <input type="number" min="0" step="100" value={effectiveBetAmount || ''} 
                     onFocus={e => e.target.select()}
                     onChange={e => setBetAmount(Math.max(0, parseInt(e.target.value) || 0))} 
-                    disabled={isBettingClosed()}
-                    className="w-28 bg-[#0e0e10] border border-[#2a2a32] rounded px-3 py-1.5 font-mono text-sm text-white focus:outline-none focus:border-indigo-500 disabled:opacity-30 transition-all shadow-inner" 
+                    disabled={isBettingClosed() || betType === 'WIN5'}
+                    className={`w-28 bg-[#0e0e10] border border-[#2a2a32] rounded px-3 py-1.5 font-mono text-sm text-white focus:outline-none focus:border-indigo-500 disabled:opacity-50 transition-all shadow-inner ${betType === 'WIN5' ? 'border-emerald-500/50 text-emerald-400' : ''}`} 
                     placeholder="100"
                   />
                   <span style={{ fontSize: 11 }} className="text-gray-400 font-black ml-1">C</span>

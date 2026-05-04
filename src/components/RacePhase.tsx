@@ -2,17 +2,10 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { peerManager } from '../network/peerManager';
 import { CommentaryGenerator } from '../core/commentary_generator';
+import { HORSE_COLORS } from '../core/constants';
 
-// ── Constants ───────────────────────────────────────────────────────────────
-const HORSE_COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
-  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e',
-  '#84cc16', '#0ea5e9', '#a855f7', '#fb923c', '#10b981',
-  '#6366f1', '#e11d48', '#0891b2',
-];
-
-const STAGE_DUR = 3500; // Time per simulation stage (ms)
-const GOAL_STAGE_DUR = 8000; // Extra time for the final stretch to avoid clumping
+const STAGE_DUR = 2500; // Time per simulation stage (ms)
+const GOAL_STAGE_DUR = 5000; // Extra time for the final stretch
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
@@ -32,18 +25,9 @@ export default function RacePhase() {
   const [isFinished, setIsFinished] = useState(false);
   const [commentary, setCommentary] = useState<{ id: number; text: string; type?: string }[]>([]);
   const [telop, setTelop] = useState<string>('');
-  const [rankings, setRankings] = useState<{ hn: number; name: string; progress: number; prevRank?: number }[]>([]);
+  const [rankings, setRankings] = useState<{ hn: number; name: string; progress: number; prevRank?: number; confirmed?: boolean }[]>([]);
   const [pace, setPace] = useState<string>('');
   const logEndRef = useRef<HTMLDivElement>(null);
-
-  if (!horses || horses.length === 0 || !raceData || !raceData.simulation) {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-[#0c100c] text-white">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="font-black tracking-widest animate-pulse uppercase">Race Data Loading...</p>
-      </div>
-    );
-  }
 
   const rafRef = useRef<number | null>(null);
   const lastStageRef = useRef(-1);
@@ -57,6 +41,7 @@ export default function RacePhase() {
   const lastOvertakeTimeRef = useRef<number>(0);
   const lastLeaderRef = useRef<number | null>(null);
   const stableRankingsRef = useRef<Record<number, number>>({});
+  const suctionStartTimeRef = useRef<number>(0);
   const isIntroTriggered = useRef(false);
   const isSummaryTriggered = useRef(false);
   const lastLeadCommentTimeRef = useRef<number>(0);
@@ -64,6 +49,7 @@ export default function RacePhase() {
   // Refs to avoid stale closure inside useCallback loop
   const isStartedRef = useRef(false);
   const isFinishedRef = useRef(false);
+  const startTimeRef = useRef<number>(Date.now());
 
   const horsesRef = useRef(horses);
   const simRef = useRef(raceData?.simulation);
@@ -72,6 +58,15 @@ export default function RacePhase() {
   useEffect(() => { horsesRef.current = horses; }, [horses]);
   useEffect(() => { simRef.current = raceData?.simulation; }, [raceData?.simulation]);
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commentary]);
+
+  if (!horses || horses.length === 0 || !raceData || !raceData.simulation) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-[#0c100c] text-white">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="font-black tracking-widest animate-pulse uppercase">Race Data Loading...</p>
+      </div>
+    );
+  }
 
   const addLog = useCallback((text: string, type?: string) => {
     setCommentary(p => [...p, { id: Date.now() + Math.random(), text, type }].slice(-50));
@@ -92,15 +87,15 @@ export default function RacePhase() {
     const H = canvas.height;
 
     // Use absolute time for sync
-    const raceStart = useGameStore.getState().raceStartTime || 0;
+    const raceStart = useGameStore.getState().raceStartTime || startTimeRef.current;
     const now = Date.now();
     const elapsed = now - raceStart;
-    
+
     // Countdown logic
     if (elapsed < 0) {
       const cd = Math.ceil(Math.abs(elapsed) / 1000);
       setCountdown(cd);
-      
+
       // Trigger Intro Commentary when countdown reaches 3 or less
       if (cd <= 3 && !isIntroTriggered.current) {
         isIntroTriggered.current = true;
@@ -122,12 +117,29 @@ export default function RacePhase() {
       }
     }
 
+    // 120s Timeout
+    if (elapsed >= 120000 && !doneRef.current) {
+      doneRef.current = true;
+      isFinishedRef.current = true;
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      setIsFinished(true);
+      setTelop('規定時間超過によりレース終了');
+      addLog('⏳ 規定時間超過によりレース終了');
+
+      if (useGameStore.getState().role === 'host') {
+        nextTimerRef.current = setTimeout(() => {
+          handleNext();
+        }, 3000);
+      }
+      return;
+    }
+
     const totalDur = (sim.stages.length - 1) * STAGE_DUR + GOAL_STAGE_DUR;
     const done = elapsed >= totalDur;
 
     const isGoalStage = elapsed >= (sim.stages.length - 1) * STAGE_DUR;
     const stageIdx = isGoalStage ? sim.stages.length - 1 : Math.floor(elapsed / STAGE_DUR);
-    
+
     let stageProg = 0;
     if (isGoalStage) {
       const stageElapsed = elapsed - (sim.stages.length - 1) * STAGE_DUR;
@@ -139,14 +151,14 @@ export default function RacePhase() {
     if (stageIdx !== lastStageRef.current) {
       lastStageRef.current = stageIdx;
       const info = sim.stages[stageIdx];
-      
+
       if (stageIdx === 0 && sim.pace) {
         setPace(sim.pace);
         addLog(`🏁 レース開始 (ペース: ${sim.pace})`);
       }
 
       // Generate rich commentary for Telop only
-      const newLines = CommentaryGenerator.generate(stageIdx, sim, horsesRef.current);
+      const newLines = CommentaryGenerator.generate(stageIdx, sim, horsesRef.current, finishedHorsesRef.current);
       newLines.forEach((text, i) => {
         setTimeout(() => {
           setTelop(text);
@@ -170,7 +182,13 @@ export default function RacePhase() {
       };
       const prev = stageIdx > 0 ? getProg(stageIdx - 1) : 0;
       const next = getProg(stageIdx);
-      const prog = prev + (next - prev) * stageProg;
+      let prog = prev + (next - prev) * stageProg;
+
+      // 一度ゴールした馬は、シミュレーターの進行度に関わらず1.0以上に固定する（逆走バグ防止）
+      if (finishedHorsesRef.current.has(hn)) {
+        prog = Math.max(1.0, prog);
+      }
+
       return { hn, name: h.name, progress: prog }; // No Math.min(1.0) here to allow natural finish detection
     });
 
@@ -179,7 +197,7 @@ export default function RacePhase() {
       winnerCrossedRef.current = true;
       const winner = [...horsesInRace].sort((a, b) => b.progress - a.progress)[0];
       const hData = horsesRef.current.find(h => h.horse_number === winner.hn);
-      
+
       const finishLines = CommentaryGenerator.generateFinish(winner, hData?.popularity || 1);
       finishLines.forEach((text, i) => {
         setTimeout(() => {
@@ -194,12 +212,34 @@ export default function RacePhase() {
       lastFinishTimeRef.current = Date.now();
     }
 
+    // After 5 horses cross, gently boost remaining horses to approach their final sim progress
+    if (finishedHorsesRef.current.size >= 5) {
+      if (suctionStartTimeRef.current === 0) suctionStartTimeRef.current = now;
+      const suctionDuration = now - suctionStartTimeRef.current;
+      // 時間経過で補正割合を計算。6秒で必ず1.0（目標位置に到達）になるようにする。
+      const factor = Math.pow(Math.min(1.0, suctionDuration / 6000), 1.5);
+
+      const sim = simRef.current!;
+      const finalStage = sim.stages[sim.stages.length - 1];
+      horsesInRace.forEach(h => {
+        if (!finishedHorsesRef.current.has(h.hn)) {
+          // シミュレーター上の最終位置に関わらず、吸い込みの最終目標は1.0（ゴール）にする
+          const simFinalProg = finalStage?.positions_progress?.[h.hn] ?? finalStage?.positions_progress?.[String(h.hn)] ?? h.progress;
+          const targetProg = Math.max(1.0, simFinalProg);
+
+          if (targetProg > h.progress) {
+            h.progress = h.progress + (targetProg - h.progress) * factor;
+          }
+        }
+      });
+    }
+
     // Detect Subsequent Finishers with specific logic
     horsesInRace.forEach(h => {
-      if (h.progress >= 1.0 && !finishedHorsesRef.current.has(h.hn)) {
+      if (h.progress >= 0.9999 && !finishedHorsesRef.current.has(h.hn)) {
         const currentFinishCount = finishedHorsesRef.current.size;
-        const now = Date.now();
-        const timeSinceLast = now - lastFinishTimeRef.current;
+        const nowTime = Date.now();
+        const timeSinceLast = nowTime - lastFinishTimeRef.current;
 
         // Rule: Always mention Top 3. 4th+ only if gap >= 2s.
         if (currentFinishCount < 3 || timeSinceLast >= 2000) {
@@ -207,7 +247,7 @@ export default function RacePhase() {
           const text = `🏁 ${rank}着：${h.name} 入線`;
           addLog(text, 'finish');
           setTelop(text);
-          lastFinishTimeRef.current = now;
+          lastFinishTimeRef.current = nowTime;
         }
         finishedHorsesRef.current.add(h.hn);
       }
@@ -225,7 +265,9 @@ export default function RacePhase() {
       }
 
       return b.progress - a.progress;
-    }).map((h, i) => ({ ...h, prevRank: prevRankingsRef.current[h.hn] }));
+    }).map((h, i) => ({ ...h, prevRank: prevRankingsRef.current[h.hn], confirmed: finishedHorsesRef.current.has(h.hn) }));
+
+
 
     setRankings(sorted);
 
@@ -257,16 +299,16 @@ export default function RacePhase() {
           lastLeaderRef.current = leader.hn;
         }
       }
-      
+
       // 2. General Overtake (Top 5, with separate debounce)
       const overtakeInterval = sorted[0]?.progress > 0.8 ? 1500 : 3000;
       if (now - lastOvertakeTimeRef.current > overtakeInterval) {
         let overtakeData: { overtaker: any, target: any } | null = null;
-        
+
         for (const h of top5) {
           const stableRank = stableRankingsRef.current[h.hn] || 99;
           const currentRank = sorted.indexOf(h) + 1;
-          
+
           if (currentRank < stableRank) {
             // Find who was at this rank in stable rankings
             const targetHn = Object.keys(stableRankingsRef.current).find(key => stableRankingsRef.current[Number(key)] === currentRank);
@@ -279,7 +321,7 @@ export default function RacePhase() {
             }
           }
         }
-        
+
         if (overtakeData && overtakeData.overtaker.hn !== (leader?.hn || -1)) {
           const hData = horsesRef.current.find(h => h.horse_number === overtakeData!.overtaker.hn);
           const text = CommentaryGenerator.pick('OVERTAKE', overtakeData.overtaker.name, hData?.jockey_name, overtakeData.target.name);
@@ -300,14 +342,14 @@ export default function RacePhase() {
         const h1 = sorted[0];
         const h2 = sorted[1];
         const dist = h1.progress - h2.progress;
-        
+
         let text = "";
         if (dist > 0.08) { // Large lead
           text = CommentaryGenerator.pick('LEAD_BIG', h1.name);
         } else if (dist < 0.01 && h1.progress > 0.2) { // Very close
           text = CommentaryGenerator.pick('LEAD_CLOSE', h1.name);
         }
-        
+
         if (text) {
           setTelop(text);
           lastLeadCommentTimeRef.current = now;
@@ -418,41 +460,35 @@ export default function RacePhase() {
       if (isLeader) { ctx.shadowBlur = 20; ctx.shadowColor = color; }
       ctx.beginPath(); ctx.arc(0, 0, isLeader ? 18 : 14, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.font = `bold ${isLeader ? 14 : 11}px monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(hp.hn), 0, 0);
-      if (isLeader || hp.rank <= 3) { 
-        ctx.fillStyle = '#fff'; 
-        ctx.font = 'bold 20px sans-serif'; 
-        ctx.shadowBlur = 4; 
-        ctx.shadowColor = '#000'; 
-        ctx.textAlign = 'center'; 
+      if (isLeader || hp.rank <= 3) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = '#000';
+        ctx.textAlign = 'center';
         const nameText = hp.progress >= 1.0 ? `🚩 ${hp.name}` : hp.name;
-        ctx.fillText(nameText, 0, -35); 
+        ctx.fillText(nameText, 0, -35);
       }
       ctx.restore();
     });
 
     ctx.restore();
     const allFinished = horsesInRace.every(h => h.progress >= 0.999);
-    if (done && allFinished && !doneRef.current) {
+    if (allFinished && !doneRef.current) {
       doneRef.current = true;
-      isFinishedRef.current = true;
-      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-      setIsFinished(true);
-      
-      // Race Summary
-      if (!isSummaryTriggered.current) {
-        isSummaryTriggered.current = true;
-        const summary = CommentaryGenerator.generateSummary();
-        summary.forEach(text => {
-          setTelop(text);
-        });
-        addLog('🏁 全馬入線');
-      }
 
-      if (useGameStore.getState().role === 'host') {
-        nextTimerRef.current = setTimeout(() => {
-          handleNext();
-        }, 10000);
-      }
+      setTimeout(() => {
+        isFinishedRef.current = true;
+        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+        setIsFinished(true);
+
+        if (useGameStore.getState().role === 'host') {
+          nextTimerRef.current = setTimeout(() => {
+            handleNext();
+          }, 500);
+        }
+      }, 500);
+
       return;
     }
     rafRef.current = requestAnimationFrame(loop);
@@ -468,8 +504,8 @@ export default function RacePhase() {
 
   useEffect(() => {
     const resize = () => {
-      const c = canvasRef.current; if (!c) return;
-      c.width = c.parentElement!.clientWidth; c.height = c.parentElement!.clientHeight;
+      const c = canvasRef.current; if (!c || !c.parentElement) return;
+      c.width = c.parentElement.clientWidth; c.height = c.parentElement.clientHeight;
     };
     window.addEventListener('resize', resize); resize();
     return () => window.removeEventListener('resize', resize);
@@ -508,7 +544,7 @@ export default function RacePhase() {
         {/* Race Track */}
         <div className="flex-1 relative">
           <canvas ref={canvasRef} className="w-full h-full" />
-          
+
           {/* Commentary Telop (On-site feel) */}
           {telop && (
             <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-[80%] max-w-3xl z-40 pointer-events-none">
@@ -533,21 +569,28 @@ export default function RacePhase() {
           <div className="p-4 bg-white/5 border-b border-white/10">
             <div className="text-[10px] text-gray-500 uppercase font-black tracking-widest opacity-50">Real-time Ranking</div>
           </div>
-          <div className="flex-1 relative">
+          <div className="flex-1 relative overflow-hidden">
             {rankings.map((r, i) => {
               const currentRank = i + 1;
               const isOvertaking = r.prevRank !== undefined && currentRank < r.prevRank;
+              const isConfirmed = r.confirmed;
               return (
                 <div
                   key={r.hn}
                   className={`absolute left-0 right-0 px-4 transition-all duration-700 ease-[cubic-bezier(0.22,1.61,0.36,1)] ${isOvertaking ? 'z-10' : 'z-0'}`}
                   style={{ top: i * 44 + 12, height: 40 }}
                 >
-                  <div className={`flex items-center gap-3 h-full rounded-lg px-2 border transition-all duration-500 shadow-lg ${isOvertaking ? 'bg-indigo-500 border-white scale-[1.12] shadow-[0_0_30px_rgba(99,102,241,0.8)] brightness-125' : 'bg-black/60 border-white/10'}`}>
+                  <div className={`flex items-center gap-3 h-full rounded-lg px-2 border transition-all duration-500 shadow-lg ${isConfirmed ? 'bg-yellow-900/50 border-yellow-500/60 shadow-[0_0_12px_rgba(234,179,8,0.3)]' :
+                    isOvertaking ? 'bg-indigo-500 border-white scale-[1.12] shadow-[0_0_30px_rgba(99,102,241,0.8)] brightness-125' :
+                      'bg-black/60 border-white/10'
+                    }`}>
                     <span className={`w-4 font-mono font-black text-xs text-center ${i < 3 ? 'text-yellow-400' : 'text-gray-300'}`}>{i + 1}</span>
                     <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black text-white shrink-0 shadow-xl border border-white/20" style={{ background: HORSE_COLORS[r.hn - 1], boxShadow: isOvertaking ? `0 0 20px ${HORSE_COLORS[r.hn - 1]}` : '' }}>{r.hn}</div>
                     <span className="flex-1 font-black text-xs truncate text-white drop-shadow-sm">{r.name}</span>
-                    <div className="text-[9px] font-mono text-gray-200 font-bold">{(r.progress * 100).toFixed(0)}%</div>
+                    {isConfirmed
+                      ? <div className="text-[9px] font-mono text-yellow-400 font-black">確定</div>
+                      : <div className="text-[9px] font-mono text-gray-200 font-bold">{(r.progress * 100).toFixed(0)}%</div>
+                    }
                   </div>
                 </div>
               );

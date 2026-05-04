@@ -5,411 +5,474 @@ import {
   DISTANCE_CATEGORIES,
   MARGINS,
 } from './constants';
-import type { HorseData } from './odds_calculator';
 
-function randomGauss(mean: number, std: number): number {
+function gauss(mean: number, std: number): number {
   let u = 0, v = 0;
-  while(u === 0) u = Math.random();
-  while(v === 0) v = Math.random();
-  const num = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-  return num * std + mean;
+  while (!u) u = Math.random();
+  while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) * std + mean;
 }
+
+// ─── 定数（チューニングポイント） ───────────────────────────────────
+const DIVISOR        = 900;
+const LUCK_FACTOR    = 5.0;   // 12.0から5.0へ。ステータス重視へ引き戻し
+const LATE_LUCK_MULT = 1.4;   // 1.6から1.4へ
+const MAX_FATIGUE_IMPACT = 0.20;
+const DIST_APT_BASE  = 0.8;
+const DIST_APT_RATE  = 0.3;
+
+// 脚質ごとの速度カーブ [前半, 中盤, 移行期, 直線]
+const STYLE_CURVES: Record<string, [number, number, number, number]> = {
+  逃げ:   [1.025, 1.010, 0.960, 0.880], // 序盤をさらに抑えて、終盤の垂れを調整
+  先行:   [1.015, 1.015, 0.980, 0.940],
+  差し:   [0.985, 0.990, 1.020, 1.100],
+  追込:   [0.975, 0.980, 1.040, 1.180],
+  暴れ馬: [1.000, 1.000, 1.000, 1.000],
+};
+
+// 直線でのburst倍率（脚質ごと）
+const BURST_SCALE: Record<string, number> = {
+  逃げ: 0.00, 先行: 0.10, 差し: 0.35, 追込: 0.55, 暴れ馬: 0.30,
+};
+
+// 前半の疲労負荷（脚質ごと）
+const FRONT_LOAD: Record<string, number> = {
+  逃げ: 1.50, 先行: 1.20, 差し: 0.80, 追込: 0.50, 暴れ馬: 1.60,
+};
 
 export class RaceSimulator {
   STAGES = [
-    "start", "early", "middle", "corner3",
-    "final_corner", "homestretch_early", "homestretch_final", "goal"
+    'start','early','middle','corner3',
+    'final_corner','homestretch_early','homestretch_final','goal',
   ];
-
   STAGE_NAMES_JP = [
-    "スタート", "序盤", "中盤", "3コーナー",
-    "最終コーナー", "直線前半", "直線後半", "ゴール"
+    'スタート','序盤','中盤','3コーナー',
+    '最終コーナー','直線前半','直線後半','ゴール',
   ];
 
-  simulate(raceData: any, horsesData: any[], luckFactor: number = 5.0) {
-    const distance = raceData.distance;
-    const fieldCondition = raceData.field_condition || "良";
-    const courseFeature = raceData.course_feature || "平坦";
-    const weather = raceData.weather || "晴";
+  simulate(raceData: any, horsesData: any[], luckFactor = LUCK_FACTOR) {
+    const distance: number       = raceData.distance       ?? 2000;
+    const fieldCondition: string = raceData.field_condition ?? '良';
+    const courseFeature: string  = raceData.course_feature  ?? '平坦';
+    const weather: string        = raceData.weather         ?? '晴';
 
-    const simHorses = horsesData.map(hd => {
-      const horse = hd;
-      const params = this._calculateHorseParams(horse, distance, fieldCondition, courseFeature, luckFactor);
-      return {
-        ...params,
-        horse_number: hd.horse_number,
-        horse_name: horse.name,
-        jockey_name: hd.jockey_name,
-        running_style: horse.running_style,
-        score: hd.score || 50.0,
-      };
-    });
+    const simHorses = horsesData.map(hd => ({
+      ...this._calcParams(hd.horse ?? hd, distance, fieldCondition, courseFeature),
+      horse_number:  hd.horse_number,
+      horse_name:    (hd.horse ?? hd).name,
+      jockey_name:   hd.jockey_name,
+      running_style: (hd.horse ?? hd).running_style,
+      score:         hd.score ?? 50.0,
+      fatigue:       0.0,  // 疲労値（0〜1）
+    }));
 
     const pace = this._determinePace(simHorses);
+
     const stagesData: any[] = [];
-    const eventsAll: any[] = [];
-    const cumulativePositions: Record<number, number> = {};
-    
-    simHorses.forEach(h => {
-      cumulativePositions[h.horse_number] = 0.0;
-    });
+    const eventsAll:  any[] = [];
+    const cumPos: Record<number, number> = {};
+    const finishedAt: Record<number, number> = {};
+    simHorses.forEach(h => { cumPos[h.horse_number] = 0.0; });
 
-    this.STAGES.forEach((stageName, stageIdx) => {
-      const stageResult = this._simulateStage(
-        stageIdx, simHorses, cumulativePositions, distance,
-        pace, fieldCondition, courseFeature, weather, luckFactor
+    let prevRankings: Record<number, number> = {};
+    simHorses.forEach((h, i) => { prevRankings[h.horse_number] = i + 1; });
+
+    // 動的ステージ（全馬ゴールまで継続）
+    let si = 0;
+    while (true) {
+      const result = this._simulateStage(
+        si, simHorses, cumPos, finishedAt,
+        distance, pace, fieldCondition, courseFeature, weather, luckFactor, prevRankings,
       );
-      stagesData.push(stageResult);
-      if (stageResult.events) {
-        eventsAll.push(...stageResult.events);
+      stagesData.push(result);
+      eventsAll.push(...result.events);
+      for (const [hn, prog] of Object.entries(result.positions_progress)) {
+        cumPos[parseInt(hn)] = prog as number;
       }
-      Object.entries(stageResult.positions_progress).forEach(([hn, progress]) => {
-        cumulativePositions[parseInt(hn)] = progress as number;
-      });
-    });
+      prevRankings = result.rankings;
+      si++;
 
-    const results = this._calculateFinalResults(simHorses, cumulativePositions, distance, fieldCondition);
+      const allFinished = Object.values(cumPos).every(p => p >= 1.0);
+      if (allFinished || si >= 50) break;
+    }
+
+    const results = this._calcFinalResults(simHorses, finishedAt, distance, fieldCondition);
 
     return {
-      stages: stagesData,
+      stages:    stagesData,
       results,
-      events: eventsAll,
+      events:    eventsAll,
       pace,
-      base_time: this._calculateBaseTime(distance, fieldCondition),
+      base_time: this._baseTime(distance, fieldCondition),
     };
   }
 
-  private _calculateHorseParams(horse: any, distance: number, fieldCondition: string, courseFeature: string, luckFactor: number) {
-    let { speed, stamina, power, burst, guts, wisdom } = horse;
-    
-    const fieldMods = FIELD_CONDITION_MODIFIERS[fieldCondition] || { speed: 1.0, stamina: 1.0, power: 1.0 };
-    speed *= fieldMods.speed;
-    stamina *= fieldMods.stamina;
-    power *= fieldMods.power;
+  // ─── 馬パラメータ計算 ────────────────────────────────────────────
+  private _calcParams(horse: any, distance: number, fieldCondition: string, courseFeature: string) {
+    let speed   = Number(horse.speed)   || 50;
+    let stamina = Number(horse.stamina) || 50;
+    let power   = Number(horse.power)   || 50;
+    let burst   = Number(horse.burst)   || 50;
+    let guts    = Number(horse.guts)    || 50;
+    let wisdom  = Number(horse.wisdom)  || 50;
+    const weight = Number(horse.weight) || 480;
 
-    const distCat = this._getDistanceCategory(distance);
-    const distApt = typeof horse.distance_apt === 'string' ? JSON.parse(horse.distance_apt) : horse.distance_apt;
-    const distRank = distApt[distCat] || "C";
-    const distMult = APTITUDE_MULTIPLIERS[distRank] || 1.0;
+    // 馬場補正
+    const fm = FIELD_CONDITION_MODIFIERS[fieldCondition] ?? { speed: 1.0, stamina: 1.0, power: 1.0 };
+    speed   *= fm.speed;
+    stamina *= fm.stamina;
+    power   *= fm.power;
 
-    const fieldApt = typeof horse.field_apt === 'string' ? JSON.parse(horse.field_apt) : horse.field_apt;
-    const fieldRank = fieldApt[fieldCondition] || "C";
-    const fieldMult = APTITUDE_MULTIPLIERS[fieldRank] || 1.0;
+    // 体重補正（小幅）
+    if      (weight < 450) speed *= 1.02;
+    else if (weight > 500) power *= 1.02;
 
-    const condMult = CONDITION_MODIFIERS[horse.condition] || 1.0;
+    // 距離適性（疲労倍率に使う）
+    const distCat  = this._distCat(distance);
+    const distApt  = typeof horse.distance_apt === 'string' ? JSON.parse(horse.distance_apt) : horse.distance_apt;
+    const distRank = distApt?.[distCat] ?? 'C';
+    const aptMult  = APTITUDE_MULTIPLIERS[distRank] ?? 1.0;
+    const distAptImpact = DIST_APT_BASE + (distance / 2000) * DIST_APT_RATE;
+    // 適性が悪いほど疲労が増える
+    const fatigueMult = 1.0 + (1.0 - aptMult) * distAptImpact;
 
-    let courseBonus = 0;
-    if (courseFeature === "坂あり") courseBonus = power * 0.05;
-    else if (courseFeature === "直線長") courseBonus = burst * 0.05;
-    else if (courseFeature === "コーナー多") courseBonus = wisdom * 0.05;
+    // 馬場適性
+    const fieldApt  = typeof horse.field_apt === 'string' ? JSON.parse(horse.field_apt) : horse.field_apt;
+    const fieldRank = fieldApt?.[fieldCondition] ?? 'C';
+    const fieldMult = APTITUDE_MULTIPLIERS[fieldRank] ?? 1.0;
 
-    const style = horse.running_style;
-    let earlyPower = speed * 0.3 + guts * 0.4 + wisdom * 0.2;
-    if (style === "逃げ") earlyPower *= 1.4;
-    else if (style === "先行") earlyPower *= 1.2;
-    else if (style === "差し") earlyPower *= 0.8;
-    else if (style === "追込") earlyPower *= 0.6;
+    // コンディション（全体への補正）
+    const condMult = CONDITION_MODIFIERS[horse.condition] ?? 1.0;
 
-    let middlePower = stamina * 0.4 + wisdom * 0.3 + speed * 0.2;
-    if (style === "逃げ" || style === "先行") middlePower *= 1.1;
-    else middlePower *= 0.95;
+    // コース特性ボーナス（power/burst/wisdomへの加算）
+    if      (courseFeature === '坂あり')    power  += power  * 0.04;
+    else if (courseFeature === '直線長')    burst  += burst  * 0.04;
+    else if (courseFeature === 'コーナー多') wisdom += wisdom * 0.04;
 
-    let latePower = burst * 0.4 + speed * 0.3 + guts * 0.2;
-    if (style === "追込") latePower *= 1.5;
-    else if (style === "差し") latePower *= 1.3;
-    else if (style === "先行") latePower *= 1.0;
-    else if (style === "逃げ") latePower *= 0.92;
+    // 全ステータスにcondMult適用
+    speed   *= condMult;
+    stamina *= condMult;
+    power   *= condMult;
+    burst   *= condMult;
+    guts    *= condMult;
+    wisdom  *= condMult;
 
-    let staminaFactor = 1.0;
-    if (distance >= 2500) staminaFactor = 1 + (stamina - 50) / 200;
-    else if (distance >= 1900) staminaFactor = 1 + (stamina - 50) / 350;
+    // 基礎速度（全馬ほぼ同じ。speedは±3%のみ）
+    const baseSpeed = 50 + (speed - 50) * 0.06;
 
     return {
       speed, stamina, power, burst, guts, wisdom,
-      early_power: earlyPower * distMult * condMult,
-      middle_power: middlePower * distMult * fieldMult * condMult * staminaFactor,
-      late_power: latePower * distMult * fieldMult * condMult + courseBonus,
-      total_mult: distMult * fieldMult * condMult,
+      base_speed:   baseSpeed,
+      fatigue_mult: fatigueMult,  // 距離適性による疲労倍率
+      field_mult:   fieldMult,    // 馬場適性（terrain lossに使う）
     };
   }
 
+  // ─── ペース判定 ──────────────────────────────────────────────────
   private _determinePace(simHorses: any[]): string {
-    const escapeCount = simHorses.filter(h => h.running_style === "逃げ").length;
-    const frontCount = simHorses.filter(h => h.running_style === "逃げ" || h.running_style === "先行").length;
-    const avgEarly = simHorses.reduce((sum, h) => sum + h.early_power, 0) / simHorses.length;
+    const escapeCount = simHorses.filter(h => h.running_style === '逃げ').length;
+    const frontCount  = simHorses.filter(h => ['逃げ','先行'].includes(h.running_style)).length;
+    const avgWisdom   = simHorses.reduce((s, h) => s + h.wisdom, 0) / simHorses.length;
 
-    if (escapeCount >= 4 || (escapeCount >= 3 && frontCount >= 5)) return "ハイペース";
-    if (escapeCount === 0 || frontCount <= 3) return "スローペース";
-    
-    if (avgEarly > 48) {
-      return Math.random() > 0.5 ? "ミドルペース" : "ハイペース";
-    } else {
-      return Math.random() > 0.4 ? "ミドルペース" : "スローペース";
-    }
+    if (escapeCount >= 4 || (escapeCount >= 3 && frontCount >= 5)) return 'ハイペース';
+    if (escapeCount === 0 || frontCount <= 2)                       return 'スローペース';
+    return avgWisdom > 55
+      ? (Math.random() > 0.5 ? 'ミドルペース' : 'スローペース')
+      : (Math.random() > 0.4 ? 'ミドルペース' : 'ハイペース');
   }
 
+  // ─── 1ステップシミュレーション ──────────────────────────────────
   private _simulateStage(
-    stageIdx: number, simHorses: any[], cumulativePositions: Record<number, number>,
-    distance: number, pace: string, fieldCondition: string, courseFeature: string,
-    weather: string, luckFactor: number
+    si: number, simHorses: any[], cumPos: Record<number, number>,
+    finishedAt: Record<number, number>,
+    distance: number, pace: string,
+    fieldCondition: string, courseFeature: string,
+    weather: string, luckFactor: number,
+    prevRankings: Record<number, number>,
   ) {
-    const stageName = this.STAGES[stageIdx];
     const events: any[] = [];
-    const positionsProgress: Record<number, number> = {};
+    const posProgress: Record<number, number> = {};
+    const expectedSteps = 18;
 
-    const stageWeights = [0.05, 0.15, 0.30, 0.45, 0.60, 0.75, 0.90, 1.0];
-    const targetProgress = stageWeights[stageIdx];
+    for (const h of simHorses) {
+      const hn  = h.horse_number;
+      const prog = cumPos[hn];
 
-    simHorses.forEach(h => {
-      const hn = h.horse_number;
-      const prevProgress = cumulativePositions[hn];
-      let base = 0;
-
-      if (stageIdx <= 1) base = h.early_power;
-      else if (stageIdx <= 3) base = h.middle_power;
-      else base = h.late_power;
-
-      let paceMod = 1.0;
-      if (pace === "ハイペース") {
-        if (stageIdx <= 2) {
-          paceMod = (h.running_style === "逃げ" || h.running_style === "先行") ? 1.05 : 0.98;
-        } else {
-          paceMod = (h.running_style === "逃げ" || h.running_style === "先行") ? 0.92 : 1.08;
-        }
-      } else if (pace === "スローペース") {
-        if (stageIdx <= 2) {
-          paceMod = 0.95;
-        } else {
-          paceMod = (h.running_style === "逃げ" || h.running_style === "先行") ? 1.08 : 0.95;
-        }
+      // ゴール済みはそのまま
+      if (finishedAt[hn] !== undefined) {
+        posProgress[hn] = cumPos[hn];
+        continue;
       }
 
-      let luck = (h.running_style === "暴れ馬") ? randomGauss(0, luckFactor * 2.5) : randomGauss(0, luckFactor);
+      // ── 区間判定 ──
+      const phase = prog < 0.33 ? 'early'
+                  : prog < 0.60 ? 'mid'
+                  : prog < 0.75 ? 'transition'
+                  :               'sprint';
+      const isFront = ['逃げ','先行'].includes(h.running_style);
 
-      if (stageIdx === 0) {
-        const startRoll = Math.random();
-        if (h.running_style === "暴れ馬") {
-          if (startRoll < 0.25) {
-            luck -= luckFactor * 3.0;
-            events.push({ type: "bad_start", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name, wild: true });
-          } else if (startRoll > 0.875) {
-            luck += luckFactor * 1.5;
-            events.push({ type: "good_start", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
-          }
-        } else {
-          if (startRoll < 0.08) {
-            luck -= luckFactor * 2;
-            events.push({ type: "bad_start", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
-          } else if (startRoll > 0.88) {
-            luck += luckFactor * 1.5;
-            events.push({ type: "good_start", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+      // staminaで移行期・直線の垂れを緩和（補正値として保持）
+      const staminaBonus = (phase === 'transition' || phase === 'sprint') ? (h.stamina - 50) * 0.003 : 0;
+
+      // ── 疲労の蓄積（案C） ──
+      const baseFatigueRate = 1.0 / expectedSteps;
+      const frontLoad       = FRONT_LOAD[h.running_style] ?? 1.0;
+      const paceFrontAdj    = isFront
+        ? (pace === 'ハイペース' ? 1.25 : pace === 'スローペース' ? 0.82 : 1.0)
+        : (pace === 'スローペース' ? 1.05 : 1.0);
+      const wisdomSave = 1.0 - (h.wisdom - 50) / 500;
+
+      let fatigueInc = baseFatigueRate * (
+        phase === 'early' || phase === 'mid'
+          ? frontLoad * paceFrontAdj * wisdomSave
+          : 1.0 - (FRONT_LOAD[h.running_style] ?? 1.0) * 0.3
+      ) * h.fatigue_mult;
+
+      // ハナ争い（逃げ×ハイペース×前半）
+      if (h.running_style === '逃げ' && pace === 'ハイペース' && prog < 0.15) {
+        if (Math.random() > h.wisdom / 200) {
+          fatigueInc *= 1.3;
+          if (!events.some(e => e.type === 'hana_arasoi' && e.horse_number === hn)) {
+            events.push({ type: 'hana_arasoi', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
           }
         }
       }
 
+      h.fatigue = Math.min(1.0, h.fatigue + fatigueInc);
+
+      // ── 速度倍率の決定（線形補間で滑らかにする） ──
+      const curves = STYLE_CURVES[h.running_style] || [1, 1, 1, 1];
+      let styleMulti = 1.0;
+      if (prog < 0.33) {
+        styleMulti = curves[0];
+      } else if (prog < 0.60) {
+        const t = (prog - 0.33) / (0.60 - 0.33);
+        styleMulti = curves[0] + (curves[1] - curves[0]) * t;
+      } else if (prog < 0.85) {
+        const t = (prog - 0.60) / (0.85 - 0.60);
+        styleMulti = curves[1] + (curves[2] - curves[1]) * t;
+      } else {
+        const t = Math.min(1.0, (prog - 0.85) / 0.15);
+        styleMulti = curves[2] + (curves[3] - curves[2]) * t;
+      }
+      styleMulti += staminaBonus;
+
+      // ── 疲労デバフ（全区間で連続的に適用） ──
+      const fatigueImpact = h.fatigue * (1.0 - h.stamina / 200);
+      styleMulti *= (1.0 - fatigueImpact * MAX_FATIGUE_IMPACT);
+
+      // ── 根性による粘り（後半、疲労度に応じて滑らかに発動） ──
+      if (h.fatigue > 0.5) {
+        const gutsRamp = (h.fatigue - 0.5) / 0.5;
+        styleMulti += (h.guts - 50) * 0.001 * gutsRamp;
+      }
+
+      // ── ガス欠イベント（判定は残すが、速度低下は上記で連続化済み） ──
+      if (h.fatigue >= 0.95 && !events.some(e => e.type === 'stamina_depleted' && e.horse_number === hn)) {
+        events.push({ type: 'stamina_depleted', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+      }
+
+      // ── 乱数（Luck）の計算 ──
+      let currentLuckMult = 1.0;
+      if (prog > 0.80) {
+        const t = Math.min(1.0, (prog - 0.80) / 0.20);
+        currentLuckMult = 1.0 + (LATE_LUCK_MULT - 1.0) * t;
+      }
+      let stepLuck = (Math.random() * 2 - 1) * luckFactor * currentLuckMult;
+
+      // ── burstボーナス（終盤、徐々に乗せる） ──
+      let burstBonus = 0;
+      if (prog > 0.85) {
+        const t = (prog - 0.85) / 0.15;
+        const scale = BURST_SCALE[h.running_style] ?? 0;
+        burstBonus = (h.burst - 50) * scale * 0.008 * t;
+        if (burstBonus > 0.05 && h.fatigue < 0.8 && Math.random() < 0.1) {
+          if (!events.some(e => e.type === 'last_spurt' && e.horse_number === hn)) {
+            events.push({ type: 'last_spurt', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          }
+        }
+      }
+
+      // ── 根性発揮イベント ──
+      if (prog > 0.7 && h.guts > 75 && h.fatigue > 0.6 && Math.random() < 0.05) {
+        if (!events.some(e => e.type === 'guts_display' && e.horse_number === hn)) {
+          // 根性による瞬間的な速度アップ（乗算化）
+          styleMulti *= (1.0 + (h.guts - 50) * 0.001);
+          events.push({ type: 'guts_display', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+        }
+      }
+
+      // ── 速度倍率の補正 ──
+      let terrainMod = 1.0;
+      if (fieldCondition !== '良') {
+        const baseLoss = fieldCondition === '稍重' ? 0.02 : fieldCondition === '重' ? 0.04 : 0.06;
+        terrainMod = 1.0 - baseLoss * (1.0 - (h.power - 50) / 400) * (1.0 / h.field_mult);
+      }
       let weatherMod = 1.0;
-      if (weather === "雨") weatherMod = 0.98 + h.power / 5000;
-      else if (weather === "強風") {
-        weatherMod = (h.running_style === "逃げ") ? 0.99 : 1.01;
+      if      (weather === '雨')  weatherMod = 0.97 + h.power / 5000;
+      else if (weather === '強風') weatherMod = isFront ? 0.99 : 1.01;
+      else if (weather === '雪')  weatherMod = 0.94 + h.power / 3000;
+
+      // ── ペース補正 ──
+      let paceMod = 1.0;
+      if (pace === 'ハイペース') {
+        paceMod = (phase === 'early' || phase === 'mid')
+          ? (isFront ? 1.04 : 0.97)
+          : (isFront ? 0.92 : 1.07);
+      } else if (pace === 'スローペース') {
+        paceMod = (phase === 'early' || phase === 'mid')
+          ? 0.96
+          : (isFront ? 1.06 : 0.95);
       }
 
-      if (stageIdx >= 5) {
-        if (Math.random() < 0.15 && h.burst > 70) {
-          luck += luckFactor * 1.5;
-          events.push({ type: "last_spurt", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
-        }
-        if (Math.random() < 0.10 && h.guts > 75) {
-          luck += luckFactor * 1.0;
-          events.push({ type: "guts_display", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+      // ── luck（直線は振れ幅大） ──
+      const luckScale = phase === 'sprint' ? luckFactor * LATE_LUCK_MULT : luckFactor;
+      let luck = h.running_style === '暴れ馬'
+        ? gauss(0, luckScale * 2.5)
+        : gauss(0, luckScale);
+
+      // ── イベント（luckへの加減算） ──
+
+      // スタート
+      if (prog < 0.02) {
+        const r = Math.random();
+        if (h.running_style === '暴れ馬') {
+          if (r < 0.25)    { luck -= luckFactor * 3.0; events.push({ type: 'bad_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name, wild: true }); }
+          else if (r > 0.875) { luck += luckFactor * 1.5; events.push({ type: 'good_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name }); }
+        } else {
+          const badThr  = 0.10 - (h.wisdom - 50) / 1000;
+          const goodThr = 0.88 + (h.wisdom - 50) / 2000;
+          if (r < badThr)      { luck -= luckFactor * 2.0; events.push({ type: 'bad_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name }); }
+          else if (r > goodThr){ luck += luckFactor * 1.5; events.push({ type: 'good_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name }); }
         }
       }
 
-      if (h.running_style === "暴れ馬" && (stageIdx === 2 || stageIdx === 3)) {
+      // 前詰まり（wisdomで回避）
+      if (prog < 0.66) {
+        const prob = Math.max(0, 0.05 - (h.wisdom - 50) / 2000);
+        if (Math.random() < prob) {
+          luck -= luckFactor * 1.8;
+          events.push({ type: 'interference', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+        }
+      }
+
+      // 暴れ馬：中盤制御不能
+      if (h.running_style === '暴れ馬' && prog >= 0.20 && prog < 0.55) {
         if (Math.random() < 0.15) {
-          const extreme = Math.random() < 0.5 ? -1 : 1;
-          luck += extreme * luckFactor * 4.0;
-          events.push({ type: "wild_control_lost", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name, direction: extreme > 0 ? "加速" : "大失速" });
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          luck += dir * luckFactor * 4.0;
+          events.push({ type: 'wild_control_lost', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name, direction: dir > 0 ? '加速' : '大失速' });
         }
       }
 
-      if ((stageIdx === 2 || stageIdx === 3) && Math.random() < 0.05) {
-        luck -= luckFactor * 1.5;
-        events.push({ type: "interference", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
-      }
-
-      if (h.running_style === "暴れ馬" && stageIdx >= 5) {
+      // 暴れ馬：直線爆発
+      if (h.running_style === '暴れ馬' && phase === 'sprint' && h.fatigue < 0.8) {
         if (Math.random() < 0.20) {
           luck += luckFactor * 2.5;
-          events.push({ type: "wild_explosion", horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          events.push({ type: 'wild_explosion', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
         }
       }
 
-      // 改良：段階的なギアチェンジ（0.6から1.6まで徐々に解放）
-      const idealIncr = 1.0 / this.STAGES.length; 
-      
-      // ステージごとに実力差の反映率（compression）を滑らかに変化させる
-      // [0.6, 0.6, 0.7, 0.8, 1.0, 1.2, 1.4, 1.6] のようなイメージ
-      const compressionCurve = [0.6, 0.6, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7];
-      const compression = compressionCurve[stageIdx] || 1.0;
+      // ── 進捗計算 ──
+      // 全ての倍率を乗算し、最後にLuckを加算する（Luckはガウス分布で中心は0）
+      const effectiveSpeed = h.base_speed * styleMulti * paceMod * terrainMod * weatherMod * (1.0 + burstBonus) + luck;
+      const incr = Math.max(0.003, effectiveSpeed / DIVISOR);
+      const next = prog + incr;  // 1.0超えても記録（finishedAtで管理）
+      posProgress[hn] = next;
 
-      // 能力ベースの進捗計算
-      const basePower = (base * paceMod * weatherMod + luck);
-      const abilityDiff = (basePower - 50.0) / 100.0;
-      const abilityIncr = 1.0 + (abilityDiff * compression);
-
-      // ラバーバンド補正（競り合いの塩梅を0.06に設定）
-      let rubberBand = 0;
-      if (stageIdx <= 5) {
-        const avgProgress = Object.values(cumulativePositions).reduce((a, b) => a + b, 0) / simHorses.length;
-        const gapFromAvg = prevProgress - avgProgress;
-        rubberBand = -gapFromAvg * 0.06; 
+      // ゴール判定
+      if (next >= 1.0 && finishedAt[hn] === undefined) {
+        const fraction = (1.0 - prog) / incr;
+        finishedAt[hn] = si + fraction;
       }
-
-      // 進捗の更新（最低進捗を保証しつつ、能力を反映）
-      const progressIncrement = Math.max(0.03, idealIncr * abilityIncr + rubberBand);
-      let nextProgress = prevProgress + progressIncrement;
-
-      // 最終ステージ（ゴール）では全員が1.0以上に到達するように補正し、フリーズを防ぐ
-      if (stageIdx === this.STAGES.length - 1) {
-        nextProgress = Math.max(1.0, nextProgress);
-      }
-
-      cumulativePositions[hn] = nextProgress;
-    });
-
-    // 最終ステージ（ゴール）での「吸い込まれ」防止処理
-    if (stageIdx === this.STAGES.length - 1) {
-      const progs = Object.entries(cumulativePositions).map(([hn, prog]) => ({ hn: parseInt(hn), prog }));
-      const minProg = Math.min(...progs.map(p => p.prog));
-      const maxProg = Math.max(...progs.map(p => p.prog));
-      const currentSpread = maxProg - minProg;
-
-      // 強制的に着差をつける（最低でも進行度0.20、最大0.40の差をつける）
-      // 非線形スケーリングをなくし、純粋な線形拡大にすることで後続の「団子」を防ぐ
-      const targetSpread = Math.max(0.20, Math.min(0.40, currentSpread * 15));
-
-      progs.forEach(p => {
-        const normalized = currentSpread > 0 ? (p.prog - minProg) / currentSpread : 0;
-        // 線形スケーリング（そのままの比率で拡大）
-        const newProg = minProg + normalized * targetSpread;
-        cumulativePositions[p.hn] = newProg;
-      });
-
-      // 最下位の馬でも1.0（ゴール）には到達させる
-      const newMin = Math.min(...Object.values(cumulativePositions));
-      const offset = 1.02 - newMin;
-      
-      simHorses.forEach(h => {
-        cumulativePositions[h.horse_number] += offset;
-        positionsProgress[h.horse_number] = cumulativePositions[h.horse_number];
-      });
-    } else {
-      simHorses.forEach(h => {
-        positionsProgress[h.horse_number] = cumulativePositions[h.horse_number];
-      });
     }
 
-    const sortedHorses = Object.entries(cumulativePositions)
-      .map(([hn, prog]) => ({ hn: parseInt(hn), prog }))
-      .sort((a, b) => b.prog - a.prog);
-
+    // ── 順位計算 ──
+    const sorted = Object.entries(posProgress)
+      .map(([hn, p]) => ({ hn: parseInt(hn), p }))
+      .sort((a, b) => b.p - a.p);
     const rankings: Record<number, number> = {};
-    sortedHorses.forEach((sh, rank) => {
-      rankings[sh.hn] = rank + 1;
-    });
-
-    const sortedOutput = sortedHorses.map((sh, idx) => {
-      const h = simHorses.find(x => x.horse_number === sh.hn)!;
-      return {
-        horse_number: sh.hn,
-        horse_name: h.horse_name,
-        jockey_name: h.jockey_name,
-        running_style: h.running_style,
-        position: idx + 1,
-        progress: sh.prog,
-      };
-    });
+    sorted.forEach((x, i) => { rankings[x.hn] = i + 1; });
 
     return {
-      stage_idx: stageIdx,
-      stage_name: stageName,
-      stage_name_jp: this.STAGE_NAMES_JP[stageIdx],
-      positions_progress: positionsProgress,
+      stage_idx:          si,
+      stage_name:         si < this.STAGES.length ? this.STAGES[si] : 'run',
+      stage_name_jp:      si < this.STAGE_NAMES_JP.length ? this.STAGE_NAMES_JP[si] : '走行中',
+      positions_progress: posProgress,
       rankings,
       events,
-      sorted_horses: sortedOutput,
+      sorted_horses: sorted.map((x, i) => {
+        const h = simHorses.find(z => z.horse_number === x.hn)!;
+        return {
+          horse_number:  x.hn,
+          horse_name:    h.horse_name,
+          jockey_name:   h.jockey_name,
+          running_style: h.running_style,
+          position:      i + 1,
+          progress:      Math.min(1.0, x.p),
+        };
+      }),
     };
   }
 
-  private _calculateFinalResults(simHorses: any[], cumulativePositions: Record<number, number>, distance: number, fieldCondition: string) {
-    const baseTime = this._calculateBaseTime(distance, fieldCondition);
-    
-    const sortedByProgress = Object.entries(cumulativePositions)
-      .map(([hn, prog]) => ({ hn: parseInt(hn), prog }))
-      .sort((a, b) => b.prog - a.prog);
+  // ─── 最終結果 ────────────────────────────────────────────────────
+  private _calcFinalResults(
+    simHorses: any[], finishedAt: Record<number, number>,
+    distance: number, fieldCondition: string,
+  ) {
+    const baseTime = this._baseTime(distance, fieldCondition);
+    const sorted   = Object.entries(finishedAt)
+      .map(([hn, fAt]) => ({ hn: parseInt(hn), fAt }))
+      .sort((a, b) => a.fAt - b.fAt);
 
+    const firstAt = sorted[0].fAt;
     const results: any[] = [];
     let prevTime: number | null = null;
-    const topProgress = sortedByProgress[0].prog;
 
-    sortedByProgress.forEach((sh, idx) => {
-      const rank = idx + 1;
-      const h = simHorses.find(x => x.horse_number === sh.hn)!;
-      
-      let timeRatio = 1.5;
-      if (sh.prog > 0) timeRatio = topProgress / sh.prog;
-      
-      let finishTime = baseTime * timeRatio;
-      finishTime += (Math.random() * 0.2) - 0.1;
+    for (let i = 0; i < sorted.length; i++) {
+      const { hn, fAt } = sorted[i];
+      const h = simHorses.find(x => x.horse_number === hn)!;
+      const diff = fAt - firstAt;
+
+      let finishTime = baseTime + diff * 14.0;
+      if (prevTime !== null && finishTime <= prevTime) finishTime = prevTime + 0.1;
       finishTime = Math.round(finishTime * 10) / 10;
 
-      let margin = "";
-      if (rank === 1) {
-        margin = "────";
-        prevTime = finishTime;
-      } else {
-        const timeDiff = finishTime - (prevTime as number);
-        margin = this._timeToMargin(timeDiff);
-        prevTime = finishTime;
-      }
-
       results.push({
-        position: rank,
-        horse_number: sh.hn,
-        horse_name: h.horse_name,
-        jockey_name: h.jockey_name,
+        position:      i + 1,
+        horse_number:  hn,
+        horse_name:    h.horse_name,
+        jockey_name:   h.jockey_name,
         running_style: h.running_style,
-        finish_time: finishTime,
-        margin,
+        finish_time:   finishTime,
+        margin:        i === 0 ? '────' : this._margin(finishTime - prevTime!),
       });
-    });
-
+      prevTime = finishTime;
+    }
     return results;
   }
 
-  private _calculateBaseTime(distance: number, fieldCondition: string): number {
+  // ─── ユーティリティ ─────────────────────────────────────────────
+  private _baseTime(distance: number, fieldCondition: string): number {
     let base = (distance / 200) * 12.0;
-    if (fieldCondition === "稍重") base *= 1.01;
-    else if (fieldCondition === "重") base *= 1.03;
-    else if (fieldCondition === "不良") base *= 1.05;
+    if      (fieldCondition === '稍重') base *= 1.01;
+    else if (fieldCondition === '重')   base *= 1.03;
+    else if (fieldCondition === '不良') base *= 1.05;
     return Math.round(base * 10) / 10;
   }
 
-  private _timeToMargin(timeDiff: number): string {
-    for (const [threshold, marginText] of MARGINS) {
-      if (timeDiff <= (threshold as number)) return marginText as string;
+  private _margin(diff: number): string {
+    for (const [threshold, text] of MARGINS) {
+      if (diff <= (threshold as number)) return text as string;
     }
     return '大差';
   }
 
-  private _getDistanceCategory(distance: number): string {
-    for (const [cat, [minD, maxD]] of Object.entries(DISTANCE_CATEGORIES)) {
-      if (distance >= minD && distance <= maxD) {
-        return cat;
-      }
+  private _distCat(distance: number): string {
+    for (const [cat, [min, max]] of Object.entries(DISTANCE_CATEGORIES)) {
+      if (distance >= min && distance <= max) return cat;
     }
-    if (distance < 1000) return "短距離";
-    return "長距離";
+    return distance < 1000 ? '短距離' : '長距離';
   }
 }
 

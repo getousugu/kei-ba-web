@@ -62,28 +62,30 @@ export default function App() {
     const code = secretCode.trim();
     if (!code) return;
 
-    if (code === '0328') {
+    const hash = btoa(encodeURIComponent(code));
+
+    if (hash === 'MDMyOA==') {
       unlockTitle('dev_friend');
       alert('称号「開発者の友達」を獲得しました！');
-    } else if (code === 'ヘルメス') {
+    } else if (hash === 'JUUzJTgzJTk4JUUzJTgzJUFCJUUzJTgzJUExJUUzJTgyJUI5') {
       unlockTitle('hermes');
       alert('称号「ヘルメス」を獲得しました！');
-    } else if (code === 'debaggu004') {
+    } else if (hash === 'ZGViYWdndTAwNA==') {
       unlockTitle('debugger');
       alert('称号「デバッガー」を獲得しました！');
-    } else if (code === 'antigravity') {
+    } else if (hash === 'YW50aWdyYXZpdHk=') {
       unlockTitle('gravity_master');
       alert('称号「重力使い」を獲得しました！');
-    } else if (code === '諸君　私は戦争が好きだ') {
+    } else if (hash === 'JUUzJTgyJTg4JUUzJTgyJThEJUUzJTgxJTk3JUUzJTgxJTg0JUUzJTgwJTgxJUUzJTgxJUFBJUUzJTgyJTg5JUUzJTgxJUIwJUU2JTg4JUE2JUU0JUJBJTg5JUUzJTgxJUEw') {
       unlockTitle('war_lover');
       alert('称号「よろしい、ならば戦争だ」を獲得しました！');
-    } else if (code === 'ノーライフキング') {
+    } else if (hash === 'JUUzJTgzJThFJUUzJTgzJUJDJUUzJTgzJUE5JUUzJTgyJUE0JUUzJTgzJTk1JUUzJTgyJUFEJUUzJTgzJUIzJUUzJTgyJUIw') {
       unlockTitle('no_life_king');
       alert('称号「死なずの君」を獲得しました！');
-    } else if (code === '諸君　私は競馬が好きだ') {
+    } else if (hash === 'JUUzJTgyJTg4JUUzJTgyJThEJUUzJTgxJTk3JUUzJTgxJTg0JUUzJTgwJTgxJUUzJTgxJUFBJUUzJTgyJTg5JUUzJTgxJUIwJUU3JUFCJUI2JUU5JUE2JUFDJUUzJTgxJUEw') {
       unlockTitle('keiba_lover');
       alert('称号「よろしい、ならば競馬だ」を獲得しました！');
-    } else if (code === 'Manny') {
+    } else if (hash === 'TWFubnk=') {
       setMyCoins(myCoins + 2000);
       alert('2000C 獲得しました！');
     } else {
@@ -137,7 +139,12 @@ export default function App() {
                       {myTitles.map((t: any) => (
                         <button
                           key={t.id}
-                          onClick={() => { setPlayerTitle(t.name); setShowTitles(false); }}
+                          onClick={() => {
+                            const displayName = t.id === 'title_collector' ? `${ownedTitles.length}冠の覇者` : t.name;
+                            setPlayerTitle(displayName, t.id);
+                            setShowTitles(false);
+                            peerManager.reportTitleToHost(displayName, t.id);
+                          }}
                           className={`w-full text-left px-4 py-3 rounded-xl transition-all ${playerTitle === t.name ? 'bg-indigo-600/10 border border-indigo-600/30' : 'hover:bg-white/5 border border-transparent'}`}
                         >
                           <div className={`font-black text-sm ${t.color}`}>
@@ -232,6 +239,18 @@ export default function App() {
               </h3>
               <ul className="space-y-6 text-xs text-gray-400 max-h-80 overflow-y-auto custom-scrollbar pr-2 pb-2">
                 {[
+                  {
+                    version: 'v2.0.0',
+                    date: 'May 4, 2026',
+                    content: '大型アップデート：WIN5サバイバルモード実装！',
+                    details: [
+                      '5レース連続的中を目指す「WIN5」モードを追加。',
+                      'サバイバル脱落時にこれまでの的中数に応じて賞金を獲得できる「キャッシュアウト」システムを搭載。',
+                      '全員脱落時のキャリーオーバー機能を実装。ルームを跨いでも賞金が蓄積され続けます。',
+                      'レースエンジンの刷新：既存と根本から異なるシステムに更新。',
+                      'その他多数の改善事項',
+                    ]
+                  },
                   {
                     version: 'v1.1.0',
                     date: 'May 3, 2026',

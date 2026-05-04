@@ -133,7 +133,10 @@ export class CommentaryGenerator {
       "💨 {name}の末脚が爆発！前を猛烈に追う！！",
       "💨 {name}がグイグイ伸びる！エンジンの掛かりが違う！！",
       "💨 {name}の末脚全開！一完歩ごとに前との差を詰める！！",
-      "💨 ここが勝負！{name}、持てる力をすべて絞り出す！！"
+      "💨 ここが勝負！{name}、持てる力をすべて絞り出す！！",
+      "💨 いけーっ！{name}！地を這うような末脚が炸裂だ！！",
+      "💨 {name}が飛んできた！！ものすごい脚色だ！！",
+      "💨 捉えるか！{name}が次元の違う脚を見せている！！"
     ],
     HOMESTRETCH: [
       "🔥 直線に向いた！！各騎手が一斉に追い出した！！",
@@ -141,7 +144,10 @@ export class CommentaryGenerator {
       "🔥 直線勝負！！最後の数百メートルで全てが決まる！！",
       "🔥 さぁ直線だ！ここからが本当の力比べ！！",
       "🔥 最後の直線！全馬の意地がぶつかり合う！！",
-      "🔥 遮るものはない直線！真の実力勝負、開幕！！"
+      "🔥 遮るものはない直線！真の実力勝負、開幕！！",
+      "🔥 絶叫の直線！誰が抜け出すんだ、誰が来るんだ！！",
+      "🔥 残り200！叩き合いだ！意地とプライドのぶつかり合いだ！！",
+      "🔥 スタンドが揺れている！最後の死闘が今始まった！！"
     ],
     WHIP: [
       "{name}、必死に追い出す！！",
@@ -157,7 +163,10 @@ export class CommentaryGenerator {
       "🏁 ゴール！！！！素晴らしいレースだった！！",
       "🏁 決着！！勝利の女神はどの馬に微笑んだのか！！",
       "🏁 入線！！全馬、持てる力を出し切りました！！",
-      "🏁 感動のフィニッシュ！歴史に残る名勝負が決着しました！！"
+      "🏁 感動のフィニッシュ！歴史に残る名勝負が決着しました！！",
+      "🏁 どっちだーっ！！際どい決着！写真判定か！！",
+      "🏁 捉えたか！残ったか！わずかに{name}かーっ！！",
+      "🏁 叫びたくなるような名勝負！今、決着！！"
     ],
     WINNER: [
       "🥇 勝ったのは{name}！！見事な勝利です！！",
@@ -205,6 +214,16 @@ export class CommentaryGenerator {
       "🌞 青空が広がる競馬場。絶好のコンディションが整いました！！",
       "☀️ 最高の馬場、最高の空。役者はすべて揃いました！！"
     ],
+    CLOUDY: [
+      "☁️ どんよりとした曇り空の下、各馬がスタートを切ります！",
+      "☁️ 雲が空を覆っていますが、馬場状態は良好です！",
+      "☁️ いつ雨が降ってもおかしくない空模様！レースはどうなるか！？"
+    ],
+    SNOW: [
+      "⛄ なんと雪が舞っています！銀世界でのレースとなりました！！",
+      "❄️ 冷たい雪が馬体を打ちつけます！過酷なサバイバルレースだ！！",
+      "⛄ スタミナを奪う雪！これは波乱の予感がします！！"
+    ],
     HEAVY_FIELD: [
       "🌊 水しぶきが舞う重馬場！パワーのある馬が有利だ！",
       "💧 ぬかるむ重馬場！スタミナとパワーが試される大勝負！",
@@ -247,7 +266,10 @@ export class CommentaryGenerator {
       "⚔️ 激しい叩き合い！！{name}と後続の差はほとんどありません！！",
       "⚔️ 大接戦だ！！1点を見つめるような、手に汗握る攻防！！",
       "⚔️ 差がない！！一完歩ごとに順位が入れ替わってもおかしくない！！",
-      "⚔️ 鼻差の争いか！？{name}が必死に粘る、後続が迫る！！"
+      "⚔️ 鼻差の争いか！？{name}が必死に粘る、後続が迫る！！",
+      "⚔️ 離れない！並んでいる！どっちも譲らない！！",
+      "⚔️ まさに死闘！クビの上げ下げ、運命の瞬間に向かう！！",
+      "⚔️ 熱すぎる！こんな接戦、見たことがない！！"
     ],
     CROWD_ROAR: [
       "🔊 スタンドからは地鳴りのような大歓声！！",
@@ -290,6 +312,23 @@ export class CommentaryGenerator {
       "💢 厳しい展開！{name}、スタミナ切れか足取りが重い！！",
       "💢 コース取りに失敗！{name}、外に膨らんでロスが出た！！"
     ],
+    STAMINA_DEPLETED: [
+      "😫 {name}、スタミナが切れたか！？足取りが急激に重くなった！！",
+      "😫 {name}、ここで力尽きたか！完全に脚が止まってしまった！！",
+      "😫 あーっと！{name}がバテてしまった！直線に入る前にスタミナ切れか！！",
+      "😫 {name}、限界か！？ずるずると後退していく！！",
+      "😫 厳しい！{name}、スタミナ温存が裏目に出たか、完全にガス欠です！！"
+    ],
+    STAMINA_FADING: [
+      "💦 {name}、少し足取りが怪しくなってきたか！？",
+      "💦 {name}、苦しい表情だ！ジョッキーが必死に励ます！！",
+      "💦 {name}、ここが正念場！スタミナが持つかどうかのギリギリの戦い！！"
+    ],
+    HANA_ARASOI: [
+      "🔥 激しいハナ争い！！{name}も一歩も譲らない！！",
+      "🔥 {name}が意地でも先頭に行こうとする！！序盤から激しい消耗戦だ！！",
+      "🔥 逃げ馬同士の意地のぶつかり合い！！{name}もガンガン飛ばしていく！！"
+    ],
     GUTS: [
       "🔥 {name}、驚異の粘り！！根性を見せています！！",
       "🔥 負けられない！{name}、{jockey}騎手の叱咤に応えてもう一伸び！！",
@@ -318,7 +357,7 @@ export class CommentaryGenerator {
     return [this.pick("RACE_SUMMARY")];
   }
 
-  public static generate(stageIdx: number, sim: any, horses: any[]): string[] {
+  public static generate(stageIdx: number, sim: any, horses: any[], finishedHNs: Set<number> = new Set()): string[] {
     const stage = sim.stages[stageIdx];
     const events = stage.events || [];
     const lines: string[] = [];
@@ -327,6 +366,8 @@ export class CommentaryGenerator {
     if (stageIdx === 0) {
       if (sim.weather === "雨") lines.push(this.pick("RAIN"));
       if (sim.weather === "晴") lines.push(this.pick("SUNNY"));
+      if (sim.weather === "曇") lines.push(this.pick("CLOUDY"));
+      if (sim.weather === "雪") lines.push(this.pick("SNOW"));
       if (sim.field_condition === "重") lines.push(this.pick("HEAVY_FIELD"));
       if (sim.field_condition === "不良") lines.push(this.pick("BAD_FIELD"));
 
@@ -336,11 +377,11 @@ export class CommentaryGenerator {
       lines.push(this.pick(paceKey));
       
       const leader = stage.sorted_horses[0];
-      if (leader) lines.push(this.pick("LEADER", leader.horse_name, leader.jockey_name));
+      if (leader && !finishedHNs.has(leader.horse_number)) lines.push(this.pick("LEADER", leader.horse_name, leader.jockey_name));
     } else if (stageIdx % 2 === 0 && stageIdx < sim.stages.length - 2) {
       const leader = stage.sorted_horses[0];
       const second = stage.sorted_horses[1];
-      if (leader && second) {
+      if (leader && second && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
         const r = Math.random();
         if (r > 0.6) {
           lines.push(`${leader.horse_name}が依然として先頭！ピッタリと${second.horse_name}がマークする！`);
@@ -349,7 +390,9 @@ export class CommentaryGenerator {
         } else {
           if (stage.sorted_horses.length > 3) {
             const mid = stage.sorted_horses[Math.floor(stage.sorted_horses.length / 2)];
-            lines.push(this.pick("CHASING", mid.horse_name, mid.jockey_name).replace(/{pos}/g, (Math.floor(stage.sorted_horses.length / 2) + 1).toString()));
+            if (!finishedHNs.has(mid.horse_number)) {
+              lines.push(this.pick("CHASING", mid.horse_name, mid.jockey_name).replace(/{pos}/g, (Math.floor(stage.sorted_horses.length / 2) + 1).toString()));
+            }
           }
         }
       }
@@ -357,6 +400,16 @@ export class CommentaryGenerator {
 
     // 2. イベント実況
     events.forEach((ev: CommentaryEvent) => {
+      if (finishedHNs.has(ev.horse_number)) return;
+
+      const stageHorse = stage.sorted_horses.find((h: any) => h.horse_number === ev.horse_number);
+      const rank = stageHorse?.position ?? 10;
+      
+      // スタミナ切れ実況は上位5頭のみ（スパム防止）
+      if (ev.type === "stamina_depleted" || ev.type === "stamina_fading") {
+         if (rank >= 6) return;
+      }
+
       if (ev.type === "good_start") lines.push(this.pick("GOOD_START", ev.horse_name, ev.jockey_name));
       if (ev.type === "bad_start") lines.push(this.pick("BAD_START", ev.horse_name, ev.jockey_name));
       if (ev.type === "last_spurt") lines.push(this.pick("LAST_SPURT", ev.horse_name, ev.jockey_name));
@@ -364,12 +417,15 @@ export class CommentaryGenerator {
       if (ev.type === "wild_control_lost") lines.push(this.pick("WILD_CONTROL_LOST", ev.horse_name, ev.jockey_name));
       if (ev.type === "interference") lines.push(this.pick("INTERFERENCE", ev.horse_name, ev.jockey_name));
       if (ev.type === "guts_display") lines.push(this.pick("GUTS", ev.horse_name, ev.jockey_name));
+      if (ev.type === "stamina_depleted") lines.push(this.pick("STAMINA_DEPLETED", ev.horse_name, ev.jockey_name));
+      if (ev.type === "stamina_fading") lines.push(this.pick("STAMINA_FADING", ev.horse_name, ev.jockey_name));
+      if (ev.type === "hana_arasoi") lines.push(this.pick("HANA_ARASOI", ev.horse_name, ev.jockey_name));
     });
 
     // 3. 人気馬への言及
     if (stageIdx >= 2 && stageIdx % 2 === 0) {
       const favorite = horses.find(h => h.popularity === 1);
-      if (favorite) {
+      if (favorite && !finishedHNs.has(favorite.horse_number)) {
         const stageHorse = stage.sorted_horses.find((h: any) => h.horse_number === favorite.horse_number);
         if (stageHorse) {
           const rank = stageHorse.position;

@@ -9,6 +9,7 @@ export class PeerManager {
   /** ゲスト側がホストへの接続を保持するための参照 */
   private hostPeerId: string | null = null;
   private guestCoins: Map<string, number> = new Map();
+  private guestTitles: Map<string, { name: string; id: string }> = new Map();
   // Imp-3: ホスト未接続時のメッセージキュー
   private messageQueue: any[] = [];
 
@@ -60,7 +61,7 @@ export class PeerManager {
 
   public async joinRoom(roomId: string, retryCount = 3): Promise<void> {
     const store = useGameStore.getState();
-    
+
     for (let attempt = 1; attempt <= retryCount; attempt++) {
       try {
         await new Promise<void>((resolve, reject) => {
@@ -82,7 +83,11 @@ export class PeerManager {
             this.peer!.on('disconnected', () => this.peer?.reconnect());
 
             const conn = this.peer!.connect(roomId, {
-              metadata: { playerName: store.playerName, playerTitle: store.playerTitle === '称号コレクター' ? `${store.ownedTitles.length}冠の覇者` : store.playerTitle },
+              metadata: {
+                playerName: store.playerName,
+                playerTitle: store.playerTitle === '称号コレクター' ? `${store.ownedTitles.length}冠の覇者` : store.playerTitle,
+                playerTitleId: store.playerTitleId
+              },
               reliable: true
             });
 
@@ -95,7 +100,7 @@ export class PeerManager {
               this.hostPeerId = roomId;
               this.connections.set(roomId, conn);
               this.setupConnectionHandlers(conn);
-              
+
               // Imp-11, 14: 接続確立直後に自分のコインをホストに送信する
               conn.send({ type: 'coins_update', coins: store.myCoins });
 
@@ -127,6 +132,8 @@ export class PeerManager {
     this.connections.forEach(conn => conn.close());
     this.connections.clear();
     this.guestCoins.clear();
+    this.guestTitles.clear();
+    this.messageQueue = [];
     this.hostPeerId = null;
     if (this.peer) {
       this.peer.destroy();
@@ -139,6 +146,12 @@ export class PeerManager {
 
     this.peer.on('connection', (conn) => {
       conn.on('open', () => {
+        const store = useGameStore.getState();
+        if (store.participants.length >= store.roomSettings.participantLimit && !this.connections.has(conn.peer)) {
+          conn.send({ type: 'room_full' });
+          setTimeout(() => conn.close(), 500);
+          return;
+        }
         console.log('[PeerManager] New guest connection:', conn.peer);
         this.connections.set(conn.peer, conn);
         this.setupConnectionHandlers(conn);
@@ -162,8 +175,9 @@ export class PeerManager {
       if (Date.now() - lastPing > 15000) { // 15秒応答なしで切断扱い
         console.warn('[PeerManager] Heartbeat timeout for:', conn.peer);
         clearInterval(heartbeatInterval);
-        conn.close();
-        onEnd(); // 強制終了処理
+        if (!ended) {
+          conn.close();
+        }
       }
     }, 5000);
 
@@ -190,9 +204,10 @@ export class PeerManager {
       this.connections.delete(conn.peer);
       const store = useGameStore.getState();
       if (store.role === 'guest' && conn.peer === this.hostPeerId) {
+        const oldParticipants = store.participants;
         // ホスト切断時はゲスト側の participants もクリア
         store.updateParticipants([]);
-        this.handleHostLoss();
+        this.handleHostLoss(oldParticipants);
       } else {
         this.updateParticipantsOnHost();
       }
@@ -202,14 +217,14 @@ export class PeerManager {
     conn.on('error', onEnd);
   }
 
-  private async handleHostLoss() {
+  private async handleHostLoss(oldParticipants: any[]) {
     const store = useGameStore.getState();
     if (!store.roomSettings.hostMigration) return;
-    
+
     // host を除外し、自分が残っているゲストリストから次のホストを決定
-    const others = store.participants.filter(p => p.id !== 'host');
+    const others = oldParticipants.filter(p => p.id !== 'host');
     if (others.length === 0) return;
-    
+
     const nextLeader = others[0];
     if (nextLeader.id === this.myPeerId) {
       try {
@@ -237,7 +252,9 @@ export class PeerManager {
       raceData: store.raceData,
       bettingEndTime: store.bettingEndTime,
       raceStartTime: store.raceStartTime,
-      participants: store.participants
+      participants: store.participants,
+      win5Data: store.win5Data,
+      roomCarryover: store.roomCarryover
     });
   }
 
@@ -249,10 +266,14 @@ export class PeerManager {
       case 'sync_full_state':
       case 'phase_start':
         console.log('[PeerManager] Processing atomic state update:', data.phase);
-        
+
         const nextSettings = data.settings || data.roomSettings;
         const isMidGame = (data.phase === 'betting' || data.phase === 'race');
         const shouldSpectate = data.type === 'sync_full_state' && isMidGame;
+
+        if (data.phase === 'betting' && store.phase !== 'betting') {
+          useGameStore.getState().resetBets();
+        }
 
         useGameStore.setState((s) => ({
           ...s,
@@ -263,6 +284,8 @@ export class PeerManager {
           ...(data.raceStartTime ? { raceStartTime: data.raceStartTime } : {}),
           ...(data.participants ? { participants: data.participants } : {}),
           ...(data.phase ? { phase: data.phase } : {}),
+          ...(data.win5Data !== undefined ? { win5Data: data.win5Data } : {}),
+          ...(data.roomCarryover !== undefined ? { roomCarryover: data.roomCarryover } : {}),
           isSpectator: data.phase === 'betting' ? false : (s.isSpectator || shouldSpectate)
         }));
         break;
@@ -313,6 +336,15 @@ export class PeerManager {
         if (store.role === 'host') {
           const nextPool = [...store.hostBetPool, data.bet];
           store.setHostBetPool(nextPool);
+
+          // WIN5の購入なら賞金プールに加算
+          if (data.bet.bet_type === 'WIN5' && store.win5Data) {
+            const nextWin5 = { ...store.win5Data, totalPrize: store.win5Data.totalPrize + data.bet.amount };
+            store.setWin5Data(nextWin5);
+            // オッズと一緒にWIN5状態もブロードキャスト
+            this.broadcast({ type: 'win5_update', data: nextWin5 });
+          }
+
           this.recalculateAndBroadcastOdds(nextPool);
         }
         break;
@@ -326,14 +358,13 @@ export class PeerManager {
       case 'odds_update':
         store.updateHorses(data.horses);
         break;
+      case 'title_update':
       case 'update_profile':
         if (store.role === 'host') {
-          const conn = this.connections.get(peerId);
-          if (conn) {
-            // metadata は read-only のため title は別途 Map に保存
-            // （guestCoins と同様に playerTitle も管理できるが、
-            //   参加者リスト生成時に conn.metadata から取得しているため
-            //   ここは updateParticipantsOnHost を呼ぶだけでOK）
+          const tName = data.name || data.title;
+          const tId = data.id || 'unknown';
+          if (tName) {
+            this.guestTitles.set(peerId, { name: tName, id: tId });
             this.updateParticipantsOnHost();
           }
         }
@@ -343,6 +374,54 @@ export class PeerManager {
         if (store.role === 'host') {
           this.guestCoins.set(peerId, data.coins);
           this.updateParticipantsOnHost();
+        }
+        break;
+      case 'room_full':
+        alert('参加しようとしたルームは満員です。');
+        useGameStore.getState().setPhase('login');
+        this.cleanup();
+        break;
+      case 'win5_start':
+        store.setWin5Data(data.data);
+        if (data.settings) store.setRoomSettings(data.settings);
+        store.addChatMessage({ id: 'win5-' + Date.now(), sender: 'SYSTEM', text: '🏆 WIN5が開催されました！', timestamp: Date.now() });
+        break;
+      case 'win5_update':
+        store.setWin5Data(data.data);
+        if (store.role === 'host') this.broadcastExcept(data, peerId);
+        break;
+      case 'win5_carryover_update':
+        store.setRoomCarryover(data.val);
+        break;
+      case 'win5_debug_update':
+        store.setWin5Debug(data.val);
+        break;
+      case 'join_win5':
+        if (store.role === 'host' && store.win5Data) {
+          const nextData = {
+            ...store.win5Data,
+            survivors: [...store.win5Data.survivors, data.playerId],
+            totalPrize: store.win5Data.totalPrize + data.amount
+          };
+          store.setWin5Data(nextData);
+          this.broadcast({ type: 'win5_update', data: nextData });
+
+          const player = store.participants.find(p => p.id === data.playerId);
+          const msg = {
+            id: 'join-win5-' + Date.now(),
+            sender: 'SYSTEM',
+            text: `🏆 ${player?.name || 'ゲスト'}さんがWIN5に参加しました！現在の賞金: ${nextData.totalPrize}C`,
+            timestamp: Date.now()
+          };
+          store.addChatMessage(msg);
+          this.broadcast({ type: 'chat', msg });
+        }
+        break;
+      case 'win5_cashout_report':
+        if (store.role === 'host' && store.win5Data) {
+          const nextData = { ...store.win5Data, totalPrize: Math.max(0, store.win5Data.totalPrize - data.amount) };
+          store.setWin5Data(nextData);
+          this.broadcast({ type: 'win5_update', data: nextData });
         }
         break;
       // Imp-16: 不明なメッセージタイプを受け取った場合のログ
@@ -362,21 +441,40 @@ export class PeerManager {
     this.broadcast({ type: 'odds_update', horses: updatedHorses });
   }
 
-  public updateParticipantsOnHost() {
+  public reportTitleToHost(name: string, id: string) {
     const store = useGameStore.getState();
-    if (store.role !== 'host') return;
-    const list = [
-      { id: this.myPeerId || 'host', name: store.playerName, title: store.playerTitle === '称号コレクター' ? `${store.ownedTitles.length}冠の覇者` : store.playerTitle, coins: store.myCoins },
-      ...Array.from(this.connections.entries()).map(([id, conn]) => ({
-        id: id,
-        name: (conn.metadata as any)?.playerName || 'Guest',
-        title: (conn.metadata as any)?.playerTitle || '初心者',
-        // guestCoins Map から最新のコインを参照（なければ10000をデフォルト値とする）
-        coins: this.guestCoins.get(id) ?? 10000,
-      }))
-    ];
-    store.updateParticipants(list);
-    this.broadcast({ type: 'participants_update', participants: list });
+    if (this.role === 'host') {
+      this.updateParticipantsOnHost();
+    } else if (this.hostPeerId) {
+      this.sendToHost({ type: 'title_update', name, id });
+    }
+  }
+
+  public updateParticipantsOnHost() {
+    // ステートの更新が反映されるのを僅かに待ってからリストを作成する (Race Condition 対策)
+    setTimeout(() => {
+      const store = useGameStore.getState();
+      if (store.role !== 'host') return;
+
+      const list = [
+        {
+          id: this.myPeerId || 'host',
+          name: store.playerName,
+          title: store.playerTitle,
+          titleId: store.playerTitleId || 'beginner',
+          coins: store.myCoins
+        },
+        ...Array.from(this.connections.entries()).map(([id, conn]) => ({
+          id: id,
+          name: (conn.metadata as any)?.playerName || 'Guest',
+          title: this.guestTitles.get(id)?.name || (conn.metadata as any)?.playerTitle || '初心者',
+          titleId: this.guestTitles.get(id)?.id || (conn.metadata as any)?.playerTitleId || 'beginner',
+          coins: this.guestCoins.get(id) ?? 10000,
+        }))
+      ];
+      store.updateParticipants(list);
+      this.broadcast({ type: 'participants_update', participants: list });
+    }, 50);
   }
 
   public broadcast(data: any) {
@@ -407,6 +505,9 @@ export class PeerManager {
     } else {
       console.log(`[PeerManager] sendToHost: Connection not ready, queuing ${data.type}`);
       this.messageQueue.push(data);
+      if (this.messageQueue.length > 50) {
+        this.messageQueue.shift();
+      }
     }
   }
 

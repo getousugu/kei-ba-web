@@ -153,24 +153,27 @@ export default function RaceSetupPhase() {
             <div className="panel rounded-xl overflow-hidden border border-[#2a2a32]">
               <div className="panel-header flex items-center justify-between bg-[#202028] text-gray-300 font-black uppercase tracking-widest">
                 <span>馬券購入 受付時間 (秒)</span>
-                <div className="flex gap-1">
-                  {[30, 60, 120, 180].map(sec => (
-                    <button key={sec} onClick={() => setCfg({ ...cfg, bettingTime: sec })}
-                      className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${cfg.bettingTime === sec ? 'bg-indigo-600 text-white' : 'bg-black/20 text-gray-500 hover:text-gray-300'}`}>
-                      {sec}s
-                    </button>
-                  ))}
-                </div>
+                {!useGameStore.getState().win5Data?.isActive && (
+                  <div className="flex gap-1">
+                    {[30, 60, 120, 180].map(sec => (
+                      <button key={sec} onClick={() => setCfg({ ...cfg, bettingTime: sec })}
+                        className={`px-2 py-0.5 rounded text-[10px] font-black transition-all ${cfg.bettingTime === sec ? 'bg-indigo-600 text-white' : 'bg-black/20 text-gray-500 hover:text-gray-300'}`}>
+                        {sec}s
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="p-4 bg-[#1a1a1e]">
                 <div className="relative">
                   <input type="number" min="10" max="3600" value={cfg.bettingTime || ''}
+                    disabled={useGameStore.getState().win5Data?.isActive}
                     onFocus={e => e.target.select()}
                     onChange={e => {
                       const val = e.target.value === '' ? 0 : parseInt(e.target.value);
                       setCfg({ ...cfg, bettingTime: isNaN(val) ? 0 : val });
                     }}
-                    className="w-full bg-[#0e0e10] border border-[#2a2a32] rounded-lg px-10 py-2.5 text-lg font-mono font-black text-white focus:outline-none focus:border-indigo-500 transition-all text-center tabular-nums"
+                    className="w-full bg-[#0e0e10] border border-[#2a2a32] rounded-lg px-10 py-2.5 text-lg font-mono font-black text-white focus:outline-none focus:border-indigo-500 transition-all text-center tabular-nums disabled:opacity-50"
                     placeholder="120"
                   />
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-black text-[10px] uppercase pointer-events-none tracking-widest">SEC</div>
@@ -181,8 +184,10 @@ export default function RaceSetupPhase() {
             <div className="panel rounded-xl overflow-hidden">
               <div className="panel-header">コース距離</div>
               <div className="p-3">
-                <select value={cfg.distance} onChange={e => setCfg({ ...cfg, distance: e.target.value })}
-                  className="w-full bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer">
+                <select value={useGameStore.getState().win5Data?.isActive ? 'random' : cfg.distance} 
+                  disabled={useGameStore.getState().win5Data?.isActive}
+                  onChange={e => setCfg({ ...cfg, distance: e.target.value })}
+                  className="w-full bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer disabled:opacity-50">
                   <option value="random" className="bg-[#1a1a1e]">おまかせ (ランダム)</option>
                   <option value="短距離" className="bg-[#1a1a1e]">短距離 — 1000〜1400m</option>
                   <option value="マイル" className="bg-[#1a1a1e]">マイル — 1500〜1800m</option>
@@ -196,8 +201,10 @@ export default function RaceSetupPhase() {
               <div className="panel rounded-xl overflow-hidden">
                 <div className="panel-header">馬場状態</div>
                 <div className="p-3">
-                  <select value={cfg.fieldCondition} onChange={e => setCfg({ ...cfg, fieldCondition: e.target.value })}
-                    className={`w-full bg-transparent text-sm font-bold focus:outline-none cursor-pointer ${fieldColor[cfg.fieldCondition] || 'text-white'}`}>
+                  <select value={useGameStore.getState().win5Data?.isActive ? 'random' : cfg.fieldCondition} 
+                    disabled={useGameStore.getState().win5Data?.isActive}
+                    onChange={e => setCfg({ ...cfg, fieldCondition: e.target.value })}
+                    className={`w-full bg-transparent text-sm font-bold focus:outline-none cursor-pointer disabled:opacity-50 ${(fieldColor as any)[cfg.fieldCondition] || 'text-white'}`}>
                     <option value="random" className="text-white bg-[#1a1a1e]">おまかせ</option>
                     {FIELD_CONDITIONS.map(c => <option key={c} value={c} className="text-white bg-[#1a1a1e]">{c}</option>)}
                   </select>
@@ -206,9 +213,11 @@ export default function RaceSetupPhase() {
               <div className="panel rounded-xl overflow-hidden">
                 <div className="panel-header">天候</div>
                 <div className="p-3 flex items-center gap-2">
-                  <span className="text-lg leading-none">{WEATHER_ICONS[cfg.weather]}</span>
-                  <select value={cfg.weather} onChange={e => setCfg({ ...cfg, weather: e.target.value })}
-                    className="flex-1 bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer">
+                  <span className="text-lg leading-none">{WEATHER_ICONS[useGameStore.getState().win5Data?.isActive ? 'random' : cfg.weather]}</span>
+                  <select value={useGameStore.getState().win5Data?.isActive ? 'random' : cfg.weather} 
+                    disabled={useGameStore.getState().win5Data?.isActive}
+                    onChange={e => setCfg({ ...cfg, weather: e.target.value })}
+                    className="flex-1 bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer disabled:opacity-50">
                     {WEATHER_OPTIONS.map(w => <option key={w} value={w} className="bg-[#1a1a1e]">{w === 'random' ? 'おまかせ' : w}</option>)}
                   </select>
                 </div>

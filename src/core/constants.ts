@@ -5,6 +5,13 @@ export const RARITY_EMOJI: Record<string, string> = {
   Legendary: '🟡',
 };
 
+export const HORSE_COLORS = [
+  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e',
+  '#84cc16', '#0ea5e9', '#a855f7', '#fb923c', '#10b981',
+  '#6366f1', '#e11d48', '#0891b2',
+];
+
 export const FIELD_CONDITIONS = ['良', '稍重', '重', '不良'];
 
 export const DISTANCE_CATEGORIES: Record<string, [number, number]> = {
@@ -109,6 +116,10 @@ export const TITLES: TitleDefinition[] = [
   { id: 'last_chance', name: '背水の陣', description: '所持金が10C以下の状態で的中させた', color: 'text-orange-600' },
   { id: 'jackpot_777', name: 'ラッキー・セブン・フィーバー', description: '所持金がちょうど777C、または7777Cになった', color: 'text-yellow-500' },
   { id: 'all_or_nothing', name: '極限の勝負師', description: '全財産を賭けて、100倍以上の配当を手にした', color: 'text-red-600' },
+  { id: 'win5_survivor', name: 'WIN5生存者', description: 'WIN5サバイバルで生き残っている', color: 'text-emerald-400' },
+  { id: 'win5_champion', name: 'WIN5覇者', description: 'WIN5を完全制覇した', color: 'text-yellow-400' },
+  { id: 'win5_legend', name: '伝説の5連勝', description: '一度も外さずにWIN5を駆け抜けた', color: 'text-yellow-500' },
+  { id: 'win5_hunter', name: '賞金首', description: '高額なキャリーオーバーを奪取した', color: 'text-orange-400' },
 ];
 // horse_generator が必要とする定数
 // (元々 constants.ts になかったため horse_generator の import エラーになっていた)

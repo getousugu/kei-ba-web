@@ -7,6 +7,7 @@ export interface Participant {
   id: string; // Peer ID
   name: string;
   title: string;
+  titleId?: string; // ID for coloring
   coins: number;
 }
 
@@ -36,6 +37,7 @@ interface GameState {
   roomId: string | null;
   playerName: string;
   playerTitle: string;
+  playerTitleId: string;
   ownedTitles: string[]; // List of title IDs
   participants: Participant[];
   horses: HorseData[];
@@ -51,8 +53,18 @@ interface GameState {
   raceStartTime: number | null;
   isSpectator: boolean;
   roomCoinsInitialized: boolean;
+  roomCarryover: number;
 
-  // Stats for unlocking titles
+  // WIN5 (サバイバルモード) 用のState
+  win5Data: {
+    isActive: boolean;
+    currentRace: number; // 1-5
+    totalPrize: number;
+    minEntryFee: number;
+    survivors: string[]; // 生き残っているプレイヤーのID
+    isCompleted: boolean;
+  } | null;
+  win5Debug: boolean; // デバッグ用トグル: ONなら強制的中、OFFなら強制脱落
   stats: {
     totalWins: number;
     totalRaces: number;
@@ -62,7 +74,7 @@ interface GameState {
 
   // Actions
   setPlayerName: (name: string) => void;
-  setPlayerTitle: (title: string) => void;
+  setPlayerTitle: (name: string, id?: string) => void;
   unlockTitle: (titleId: string) => void;
   setPhase: (phase: GamePhase) => void;
   setRole: (role: 'host' | 'guest', roomId: string) => void;
@@ -83,10 +95,14 @@ interface GameState {
   updateStats: (newStats: Partial<GameState['stats']>) => void;
   setRaceStartTime: (time: number | null) => void;
   setSpectator: (isSpectator: boolean) => void;
+  setWin5Data: (data: GameState['win5Data']) => void;
+  setWin5Debug: (val: boolean) => void;
+  setRoomCarryover: (val: number) => void;
 }
 
 const savedName = localStorage.getItem('keiba_player_name') || 'プレイヤー';
 const savedTitle = localStorage.getItem('keiba_player_title') || '初心者';
+const savedTitleId = localStorage.getItem('keiba_player_title_id') || 'beginner';
 // Imp-17: localStorage 破損時のフェイルセーフ
 let savedOwnedTitles = ['beginner', 'title_collector'];
 try {
@@ -113,6 +129,7 @@ export const useGameStore = create<GameState>((set) => ({
   roomId: null,
   playerName: savedName,
   playerTitle: savedTitle,
+  playerTitleId: savedTitleId,
   ownedTitles: savedOwnedTitles,
   participants: [],
   horses: [],
@@ -139,15 +156,19 @@ export const useGameStore = create<GameState>((set) => ({
   raceStartTime: null,
   isSpectator: false,
   roomCoinsInitialized: false,
+  roomCarryover: 0,
+  win5Data: null,
+  win5Debug: false, // デバッグ用デフォルトOFF
   stats: savedStats,
 
   setPlayerName: (name) => {
     localStorage.setItem('keiba_player_name', name);
     set({ playerName: name });
   },
-  setPlayerTitle: (title) => {
-    localStorage.setItem('keiba_player_title', title);
-    set({ playerTitle: title });
+  setPlayerTitle: (name, id) => {
+    localStorage.setItem('keiba_player_title', name);
+    if (id) localStorage.setItem('keiba_player_title_id', id);
+    set({ playerTitle: name, playerTitleId: id || 'beginner' });
   },
   unlockTitle: (titleId) => set((state) => {
     if (state.ownedTitles.includes(titleId)) return state;
@@ -217,4 +238,7 @@ export const useGameStore = create<GameState>((set) => ({
   }),
   setRaceStartTime: (raceStartTime) => set({ raceStartTime }),
   setSpectator: (isSpectator) => set({ isSpectator }),
+  setWin5Data: (win5Data) => set({ win5Data }),
+  setWin5Debug: (win5Debug) => set({ win5Debug }),
+  setRoomCarryover: (roomCarryover) => set({ roomCarryover }),
 }));
