@@ -10,7 +10,7 @@ const MEDAL = ['🥇', '🥈', '🥉'];
 export default function ResultPhase() {
   const {
     raceData, myBets, myCoins, role, horses, participants, rematchVotes,
-    win5Data, setWin5Data, roomCarryover, setRoomCarryover, win5Debug, setPhase
+    win5Data, setWin5Data, roomCarryover, setRoomCarryover, setPhase
   } = useGameStore();
   const [totalPayout, setTotalPayout] = useState(0);
   const [paid, setPaid] = useState(false);
@@ -39,15 +39,14 @@ export default function ResultPhase() {
       else if (bet.bet_type === '3連複') isHit = nums.includes(first) && nums.includes(second) && nums.includes(third);
       else if (bet.bet_type === '3連単') isHit = nums[0] === first && nums[1] === second && nums[2] === third;
       else if (bet.bet_type === 'WIN5') {
-        // デバッグモードがONなら強制的中、OFFなら着順通り
-        isHit = win5Debug ? true : (nums[0] === first);
+        isHit = (nums[0] === first);
       }
 
       const payoutOdds = isHit ? oddsCalculator.calculatePayoutOdds(bet.bet_type, nums, horses) : 0;
       const payout = Math.floor(bet.amount * payoutOdds);
       return { ...bet, isHit, payout, payoutOdds };
     });
-  }, [myBets, results, horses, win5Debug]);
+  }, [myBets, results, horses]);
 
   useEffect(() => {
     if (paid || !hitDetails.length) return;
@@ -193,12 +192,11 @@ export default function ResultPhase() {
 
         currentSurvivors.forEach(sid => {
           const sBet = allBets.find(b => b.playerId === sid && b.bet_type === 'WIN5');
-          // 的中判定 (デバッグトグル優先)
-          const isHit = win5Debug || (sBet && sBet.horse_numbers[0] === first);
+          const isHit = !!(sBet && sBet.horse_numbers[0] === first);
           if (isHit) nextSurvivors.push(sid);
         });
 
-        const isLastRace = win5Debug || win5Data.currentRace === 5;
+        const isLastRace = win5Data.currentRace === 5;
         const noSurvivors = nextSurvivors.length === 0;
 
         if (isLastRace || noSurvivors) {

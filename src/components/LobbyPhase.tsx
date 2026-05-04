@@ -6,7 +6,7 @@ import { TITLES } from '../core/constants';
 export default function LobbyPhase() {
   const {
     role, roomId, participants, chatMessages, addChatMessage, roomSettings, setRoomSettings, setPhase,
-    roomCarryover, win5Data, setWin5Data, win5Debug, setWin5Debug,
+    roomCarryover, win5Data, setWin5Data,
     playerTitleId, ownedTitles, setPlayerTitle, myCoins // 追加
   } = useGameStore();
 
@@ -171,29 +171,7 @@ export default function LobbyPhase() {
               </div>
             </section>
 
-            {isHost && (
-              <section className="pt-4 border-t border-[#2a2a32]">
-                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3">WIN5 Debug Settings</label>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-xl">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black text-gray-200">デバッグ的中トグル</span>
-                      <span className="text-[8px] text-gray-500 font-bold uppercase tracking-tighter">ON: 的中扱い / OFF: 脱落扱い</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const next = !win5Debug;
-                        setWin5Debug(next);
-                        peerManager.broadcast({ type: 'win5_debug_update', val: next });
-                      }}
-                      className={`w-10 h-5 rounded-full transition-all relative ${win5Debug ? 'bg-indigo-600' : 'bg-red-900/40'}`}
-                    >
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${win5Debug ? 'left-6' : 'left-1'}`} />
-                    </button>
-                  </div>
-                </div>
-              </section>
-            )}
+
 
             <section>
               <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">NPCの参戦</label>

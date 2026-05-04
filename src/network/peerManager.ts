@@ -393,9 +393,7 @@ export class PeerManager {
       case 'win5_carryover_update':
         store.setRoomCarryover(data.val);
         break;
-      case 'win5_debug_update':
-        store.setWin5Debug(data.val);
-        break;
+
       case 'join_win5':
         if (store.role === 'host' && store.win5Data) {
           const nextData = {

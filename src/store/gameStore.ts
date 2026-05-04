@@ -64,7 +64,6 @@ interface GameState {
     survivors: string[]; // 生き残っているプレイヤーのID
     isCompleted: boolean;
   } | null;
-  win5Debug: boolean; // デバッグ用トグル: ONなら強制的中、OFFなら強制脱落
   stats: {
     totalWins: number;
     totalRaces: number;
@@ -96,7 +95,6 @@ interface GameState {
   setRaceStartTime: (time: number | null) => void;
   setSpectator: (isSpectator: boolean) => void;
   setWin5Data: (data: GameState['win5Data']) => void;
-  setWin5Debug: (val: boolean) => void;
   setRoomCarryover: (val: number) => void;
 }
 
@@ -158,7 +156,6 @@ export const useGameStore = create<GameState>((set) => ({
   roomCoinsInitialized: false,
   roomCarryover: 0,
   win5Data: null,
-  win5Debug: false, // デバッグ用デフォルトOFF
   stats: savedStats,
 
   setPlayerName: (name) => {
@@ -239,6 +236,5 @@ export const useGameStore = create<GameState>((set) => ({
   setRaceStartTime: (raceStartTime) => set({ raceStartTime }),
   setSpectator: (isSpectator) => set({ isSpectator }),
   setWin5Data: (win5Data) => set({ win5Data }),
-  setWin5Debug: (win5Debug) => set({ win5Debug }),
   setRoomCarryover: (roomCarryover) => set({ roomCarryover }),
 }));
