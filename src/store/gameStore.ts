@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { HorseData, Bet } from '../core/odds_calculator';
+import type { RaceData } from '../core/race_simulator';
 
 export type GamePhase = 'login' | 'lobby' | 'setup' | 'betting' | 'race' | 'result';
 
@@ -44,7 +45,7 @@ interface GameState {
   myCoins: number;
   myBets: Bet[];
   chatMessages: ChatMessage[];
-  raceData: any | null;
+  raceData: RaceData | null;
   hostBetPool: Bet[];
   readyPlayers: string[];
   rematchVotes: { continue: string[]; end: string[] };
@@ -77,7 +78,7 @@ interface GameState {
   unlockTitle: (titleId: string) => void;
   setPhase: (phase: GamePhase) => void;
   setRole: (role: 'host' | 'guest', roomId: string) => void;
-  setRaceData: (data: any) => void;
+  setRaceData: (data: RaceData | null) => void;
   updateParticipants: (participants: Participant[]) => void;
   setReadyPlayers: (players?: string[]) => void;
   setHostBetPool: (bets: Bet[]) => void;
@@ -85,6 +86,7 @@ interface GameState {
   addBet: (bet: Bet) => void;
   removeBet: (betId: string) => void;
   addChatMessage: (msg: ChatMessage) => void;
+  clearNpcChatMessages: () => void;
   resetBets: () => void;
   setRematchVotes: (votes: { continue: string[]; end: string[] }) => void;
   setRoomSettings: (settings: RoomSettings) => void;
@@ -186,6 +188,9 @@ export const useGameStore = create<GameState>((set) => ({
     if (state.chatMessages.some(m => m.id === msg.id)) return state;
     return { chatMessages: [...state.chatMessages, msg].slice(-100) };
   }),
+  clearNpcChatMessages: () => set((state) => ({
+    chatMessages: state.chatMessages.filter(m => !m.text.startsWith('[NPC]'))
+  })),
   resetBets: () => set({ myBets: [] }),
   setRematchVotes: (votes) => set({ rematchVotes: votes }),
    setRoomSettings: (settings) => set((state) => {

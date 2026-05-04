@@ -248,6 +248,7 @@ export default function ResultPhase() {
     useGameStore.getState().updateHorses([]);
     useGameStore.getState().setBettingEndTime(null); // Reset timer
     useGameStore.getState().setRematchVotes({ continue: [], end: [] });
+    useGameStore.getState().clearNpcChatMessages();
     if (role === 'host') {
       peerManager.broadcast({ type: 'participants_update', participants: useGameStore.getState().participants });
       peerManager.broadcast({ type: 'phase_start', phase: 'lobby' });
@@ -314,6 +315,7 @@ export default function ResultPhase() {
     s.updateHorses(horsesWithOdds);
     s.setRaceData(freshRaceData);
     s.resetBets();
+    s.clearNpcChatMessages();
     s.setHostBetPool([]);
     s.setReadyPlayers();
     s.setBettingEndTime(null);
@@ -360,17 +362,10 @@ export default function ResultPhase() {
       const newBal = myCoins + share;
       useGameStore.getState().setMyCoins(newBal);
       peerManager.reportCoinsToHost(newBal);
-
-      // ホストに賞金総額の減少を通知
-      peerManager.sendToHost({ type: 'win5_cashout_report', amount: share });
     }
 
     setHasCashedOut(true);
-    // サバイバーリストから自分を削除
-    const nextSurvivors = win5Data.survivors.filter(id => id !== peerManager.myPeerId);
-    const updatedWin5 = { ...win5Data, survivors: nextSurvivors };
-    setWin5Data(updatedWin5);
-    peerManager.broadcast({ type: 'win5_update', data: updatedWin5 });
+    peerManager.sendToHost({ type: 'win5_cashout', amount: share, playerId: peerManager.myPeerId });
   };
 
   const handleCloseWin5 = () => {

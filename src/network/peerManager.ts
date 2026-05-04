@@ -271,8 +271,9 @@ export class PeerManager {
         const isMidGame = (data.phase === 'betting' || data.phase === 'race');
         const shouldSpectate = data.type === 'sync_full_state' && isMidGame;
 
-        if (data.phase === 'betting' && store.phase !== 'betting') {
+        if ((data.phase === 'betting' || data.phase === 'setup' || data.phase === 'lobby') && store.phase !== data.phase) {
           useGameStore.getState().resetBets();
+          useGameStore.getState().clearNpcChatMessages();
         }
 
         useGameStore.setState((s) => ({
@@ -415,11 +416,25 @@ export class PeerManager {
           this.broadcast({ type: 'chat', msg });
         }
         break;
-      case 'win5_cashout_report':
+      case 'win5_cashout':
         if (store.role === 'host' && store.win5Data) {
-          const nextData = { ...store.win5Data, totalPrize: Math.max(0, store.win5Data.totalPrize - data.amount) };
+          const nextData = {
+            ...store.win5Data,
+            survivors: store.win5Data.survivors.filter(id => id !== data.playerId),
+            totalPrize: Math.max(0, store.win5Data.totalPrize - (data.amount || 0))
+          };
           store.setWin5Data(nextData);
           this.broadcast({ type: 'win5_update', data: nextData });
+
+          const player = store.participants.find(p => p.id === data.playerId);
+          const msg = {
+            id: 'cashout-win5-' + Date.now(),
+            sender: 'SYSTEM',
+            text: `💸 ${player?.name || 'ゲスト'}さんがWIN5からキャッシュアウトしました（${data.amount || 0}C獲得）。現在の賞金: ${nextData.totalPrize}C`,
+            timestamp: Date.now()
+          };
+          store.addChatMessage(msg);
+          this.broadcast({ type: 'chat', msg });
         }
         break;
       // Imp-16: 不明なメッセージタイプを受け取った場合のログ
