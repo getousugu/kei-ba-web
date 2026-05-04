@@ -229,8 +229,8 @@ export class PeerManager {
     if (nextLeader.id === this.myPeerId) {
       try {
         // 自分が新しいホストになる。元のPeerIDを引き継ぐことで他ゲストから再接続可能にする
-        await this.createRoom(this.myPeerId);
-        store.setRole('host', this.myPeerId);
+        await this.createRoom(this.myPeerId || undefined);
+        store.setRole('host', this.myPeerId || 'host');
         store.addChatMessage({ id: 'sys-' + Date.now(), sender: 'SYSTEM', text: 'ホストとして引き継ぎました。', timestamp: Date.now() });
       } catch (e) { console.error(e); }
     } else {
@@ -443,7 +443,7 @@ export class PeerManager {
 
   public reportTitleToHost(name: string, id: string) {
     const store = useGameStore.getState();
-    if (this.role === 'host') {
+    if (store.role === 'host') {
       this.updateParticipantsOnHost();
     } else if (this.hostPeerId) {
       this.sendToHost({ type: 'title_update', name, id });
