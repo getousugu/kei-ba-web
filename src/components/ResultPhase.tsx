@@ -274,7 +274,7 @@ export default function ResultPhase() {
     // --- 条件の決定 (おまかせ設定の場合は再抽選する) ---
     const { FIELD_CONDITIONS, DISTANCE_CATEGORIES } = await import('../core/constants');
 
-    let nextDistance = rd.distance;
+    let nextDistance = rd.distance || 2000;
     if (nextSettings.distance === 'random') {
       const distKeys = Object.keys(DISTANCE_CATEGORIES);
       const distanceCat = distKeys[Math.floor(Math.random() * distKeys.length)];
@@ -282,12 +282,12 @@ export default function ResultPhase() {
       nextDistance = Math.round((Math.random() * (hi - lo) + lo) / 100) * 100;
     }
 
-    let nextFC = rd.field_condition;
+    let nextFC = rd.field_condition || '良';
     if (nextSettings.fieldCondition === 'random') {
       nextFC = FIELD_CONDITIONS[Math.floor(Math.random() * FIELD_CONDITIONS.length)];
     }
 
-    let nextWeather = rd.weather;
+    let nextWeather = rd.weather || '晴';
     if (nextSettings.weather === 'random') {
       const wList = ['晴', '曇', '雨', '雪'];
       nextWeather = wList[Math.floor(Math.random() * wList.length)];

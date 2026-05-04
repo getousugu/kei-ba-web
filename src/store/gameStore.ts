@@ -1,8 +1,14 @@
 import { create } from 'zustand';
 import type { HorseData, Bet } from '../core/odds_calculator';
-import type { RaceData } from '../core/race_simulator';
-
 export type GamePhase = 'login' | 'lobby' | 'setup' | 'betting' | 'race' | 'result';
+
+export interface RaceData {
+  distance?: number;
+  field_condition?: string;
+  weather?: string;
+  course_feature?: string;
+  simulation?: any;
+}
 
 export interface Participant {
   id: string; // Peer ID
