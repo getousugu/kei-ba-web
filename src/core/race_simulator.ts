@@ -394,6 +394,46 @@ export class RaceSimulator {
     const rankings: Record<number, number> = {};
     sorted.forEach((x, i) => { rankings[x.hn] = i + 1; });
 
+    // ── 順位変動イベント ──
+    if (si > 0) {
+      const newLeaderHn = sorted[0].hn;
+      if (prevRankings[newLeaderHn] && prevRankings[newLeaderHn] > 1) {
+        const h = simHorses.find(z => z.horse_number === newLeaderHn)!;
+        events.push({ type: 'leader_change', horse_number: newLeaderHn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+      }
+
+      if (sorted.length > 1) {
+        const leadDiff = sorted[0].p - sorted[1].p;
+        if (leadDiff > 0.03 && Math.random() < 0.15) {
+          const h = simHorses.find(z => z.horse_number === sorted[0].hn)!;
+          if (!events.some(e => e.type === 'lead_big')) {
+            events.push({ type: 'lead_big', horse_number: sorted[0].hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          }
+        } else if (leadDiff < 0.005 && Math.random() < 0.15) {
+          const h = simHorses.find(z => z.horse_number === sorted[0].hn)!;
+          if (!events.some(e => e.type === 'lead_close')) {
+            events.push({ type: 'lead_close', horse_number: sorted[0].hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          }
+        }
+      }
+
+      for (const h of simHorses) {
+        const currRank = rankings[h.horse_number];
+        const prevRank = prevRankings[h.horse_number];
+        if (currRank && prevRank && currRank < prevRank) {
+          if (prevRank - currRank >= 3 && Math.random() < 0.3) {
+            events.push({ type: 'pos_up', horse_number: h.horse_number, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          } else if (prevRank - currRank >= 1 && currRank > 1 && Math.random() < 0.15) {
+            const targetHn = sorted[currRank]?.hn; // sorted is 0-indexed, so sorted[currRank] is rank+1
+            if (targetHn) {
+              const target = simHorses.find(z => z.horse_number === targetHn)!;
+              events.push({ type: 'overtake', horse_number: h.horse_number, horse_name: h.horse_name, jockey_name: h.jockey_name, target_name: target.horse_name });
+            }
+          }
+        }
+      }
+    }
+
     return {
       stage_idx:          si,
       stage_name:         si < this.STAGES.length ? this.STAGES[si] : 'run',

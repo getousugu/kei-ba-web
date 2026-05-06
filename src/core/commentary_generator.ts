@@ -377,7 +377,30 @@ export class CommentaryGenerator {
       lines.push(this.pick(paceKey));
       
       const leader = stage.sorted_horses[0];
-      if (leader && !finishedHNs.has(leader.horse_number)) lines.push(this.pick("LEADER", leader.horse_name, leader.jockey_name));
+      if (leader && !finishedHNs.has(leader.horse_number)) lines.push(this.pick("LEADER", { name: leader.horse_name, jockey: leader.jockey_name }));
+    } else if (stage.stage_name === "middle") {
+      lines.push(this.pick("MIDDLE"));
+      const leader = stage.sorted_horses[0];
+      const second = stage.sorted_horses[1];
+      if (leader && second && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
+        if (Math.random() > 0.5) {
+          lines.push(`${leader.horse_name}が依然として先頭！ピッタリと${second.horse_name}がマークする！`);
+        } else {
+          if (stage.sorted_horses.length > 3) {
+            const mid = stage.sorted_horses[Math.floor(stage.sorted_horses.length / 2)];
+            if (!finishedHNs.has(mid.horse_number)) {
+              lines.push(this.pick("CHASING", { name: mid.horse_name, jockey: mid.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
+            }
+          }
+        }
+      }
+    } else if (stage.stage_name === "corner3") {
+      lines.push(this.pick("CORNER3"));
+    } else if (stage.stage_name === "final_corner") {
+      lines.push(this.pick("FINAL_CORNER"));
+    } else if (stage.stage_name === "homestretch_early" || stage.stage_name === "homestretch_final") {
+      if (Math.random() > 0.3) lines.push(this.pick("HOMESTRETCH"));
+      if (Math.random() > 0.7) lines.push(this.pick("CROWD_ROAR"));
     } else if (stageIdx % 2 === 0 && stageIdx < sim.stages.length - 2) {
       const leader = stage.sorted_horses[0];
       const second = stage.sorted_horses[1];
@@ -385,13 +408,11 @@ export class CommentaryGenerator {
         const r = Math.random();
         if (r > 0.6) {
           lines.push(`${leader.horse_name}が依然として先頭！ピッタリと${second.horse_name}がマークする！`);
-        } else if (r > 0.3) {
-          lines.push(`各馬中盤の攻防！${leader.horse_name}がレースを引っ張る！`);
         } else {
           if (stage.sorted_horses.length > 3) {
             const mid = stage.sorted_horses[Math.floor(stage.sorted_horses.length / 2)];
             if (!finishedHNs.has(mid.horse_number)) {
-              lines.push(this.pick("CHASING", mid.horse_name, mid.jockey_name).replace(/{pos}/g, (Math.floor(stage.sorted_horses.length / 2) + 1).toString()));
+              lines.push(this.pick("CHASING", { name: mid.horse_name, jockey: mid.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
             }
           }
         }
@@ -410,16 +431,21 @@ export class CommentaryGenerator {
          if (rank >= 6) return;
       }
 
-      if (ev.type === "good_start") lines.push(this.pick("GOOD_START", ev.horse_name, ev.jockey_name));
-      if (ev.type === "bad_start") lines.push(this.pick("BAD_START", ev.horse_name, ev.jockey_name));
-      if (ev.type === "last_spurt") lines.push(this.pick("LAST_SPURT", ev.horse_name, ev.jockey_name));
-      if (ev.type === "wild_explosion") lines.push(this.pick("WILD_EXPLOSION", ev.horse_name, ev.jockey_name));
-      if (ev.type === "wild_control_lost") lines.push(this.pick("WILD_CONTROL_LOST", ev.horse_name, ev.jockey_name));
-      if (ev.type === "interference") lines.push(this.pick("INTERFERENCE", ev.horse_name, ev.jockey_name));
-      if (ev.type === "guts_display") lines.push(this.pick("GUTS", ev.horse_name, ev.jockey_name));
-      if (ev.type === "stamina_depleted") lines.push(this.pick("STAMINA_DEPLETED", ev.horse_name, ev.jockey_name));
-      if (ev.type === "stamina_fading") lines.push(this.pick("STAMINA_FADING", ev.horse_name, ev.jockey_name));
-      if (ev.type === "hana_arasoi") lines.push(this.pick("HANA_ARASOI", ev.horse_name, ev.jockey_name));
+      if (ev.type === "good_start") lines.push(this.pick("GOOD_START", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "bad_start") lines.push(this.pick("BAD_START", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "last_spurt") lines.push(this.pick("LAST_SPURT", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "wild_explosion") lines.push(this.pick("WILD_EXPLOSION", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "wild_control_lost") lines.push(this.pick("WILD_CONTROL_LOST", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "interference") lines.push(this.pick("INTERFERENCE", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "guts_display") lines.push(this.pick("GUTS", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "stamina_depleted") lines.push(this.pick("STAMINA_DEPLETED", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "stamina_fading") lines.push(this.pick("STAMINA_FADING", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "hana_arasoi") lines.push(this.pick("HANA_ARASOI", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "overtake") lines.push(this.pick("OVERTAKE", { name: ev.horse_name, target: ev.target_name }));
+      if (ev.type === "leader_change") lines.push(this.pick("LEADER_CHANGE", { name: ev.horse_name }));
+      if (ev.type === "lead_big") lines.push(this.pick("LEAD_BIG", { name: ev.horse_name }));
+      if (ev.type === "lead_close") lines.push(this.pick("LEAD_CLOSE", { name: ev.horse_name }));
+      if (ev.type === "pos_up") lines.push(this.pick("POS_UP", { name: ev.horse_name, jockey: ev.jockey_name }));
     });
 
     // 3. 人気馬への言及
@@ -431,9 +457,9 @@ export class CommentaryGenerator {
           const rank = stageHorse.position;
           const r = Math.random();
           if (rank <= 3 && r > 0.5) {
-            lines.push(this.pick("FAVORITE_MOVE", favorite.name, favorite.jockey_name));
+            lines.push(this.pick("FAVORITE_MOVE", { name: favorite.name, jockey: favorite.jockey_name }));
           } else if (rank > 6 && r > 0.5) {
-            lines.push(this.pick("FAVORITE_STRUGGLE", favorite.name, favorite.jockey_name));
+            lines.push(this.pick("FAVORITE_STRUGGLE", { name: favorite.name, jockey: favorite.jockey_name }));
           }
         }
       }
@@ -445,20 +471,20 @@ export class CommentaryGenerator {
   public static generateFinish(winner: any, popularity: number = 1): string[] {
     const lines: string[] = [];
     lines.push(this.pick("GOAL"));
-    lines.push(this.pick("WINNER", winner.name, (winner as any).jockey_name));
+    lines.push(this.pick("WINNER", { name: winner.name, jockey: (winner as any).jockey_name }));
     if (popularity >= 5) {
       lines.push(this.pick("UPSET"));
     }
     return lines;
   }
 
-  public static pick(key: string, name?: string, jockey?: string, target?: string): string {
+  public static pick(key: string, vars: Record<string, string> = {}): string {
     const list = this.PHRASES[key];
     if (!list) return "";
     let text = list[Math.floor(Math.random() * list.length)];
-    if (name) text = text.replace(/{name}/g, name);
-    if (jockey) text = text.replace(/{jockey}/g, jockey);
-    if (target) text = text.replace(/{target}/g, target);
+    for (const [k, v] of Object.entries(vars)) {
+      text = text.replace(new RegExp(`{${k}}`, 'g'), String(v));
+    }
     return text;
   }
 }
