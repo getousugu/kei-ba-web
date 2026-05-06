@@ -285,7 +285,7 @@ export default function RacePhase() {
       if (leader) {
         if (lastLeaderRef.current !== null && leader.hn !== lastLeaderRef.current) {
           const hData = horsesRef.current.find(h => h.horse_number === leader.hn);
-          const text = CommentaryGenerator.pick('LEADER_CHANGE', leader.name, hData?.jockey_name);
+          const text = CommentaryGenerator.pick('LEADER_CHANGE', { name: leader.name, jockey: hData?.jockey_name ?? '' });
           if (text) {
             setTelop(text);
             addLog(`🚩 ${leader.name} が先頭に立ちました`);
@@ -324,7 +324,7 @@ export default function RacePhase() {
 
         if (overtakeData && overtakeData.overtaker.hn !== (leader?.hn || -1)) {
           const hData = horsesRef.current.find(h => h.horse_number === overtakeData!.overtaker.hn);
-          const text = CommentaryGenerator.pick('OVERTAKE', overtakeData.overtaker.name, hData?.jockey_name, overtakeData.target.name);
+          const text = CommentaryGenerator.pick('OVERTAKE', { name: overtakeData.overtaker.name, jockey: hData?.jockey_name ?? '', target: overtakeData.target.name });
           if (text) {
             setTelop(text);
             addLog(`🔄 ${overtakeData.overtaker.name} が ${overtakeData.target.name} を追い越し ${sorted.indexOf(overtakeData.overtaker) + 1}番手に`);
@@ -345,9 +345,9 @@ export default function RacePhase() {
 
         let text = "";
         if (dist > 0.08) { // Large lead
-          text = CommentaryGenerator.pick('LEAD_BIG', h1.name);
+          text = CommentaryGenerator.pick('LEAD_BIG', { name: h1.name });
         } else if (dist < 0.01 && h1.progress > 0.2) { // Very close
-          text = CommentaryGenerator.pick('LEAD_CLOSE', h1.name);
+          text = CommentaryGenerator.pick('LEAD_CLOSE', { name: h1.name });
         }
 
         if (text) {
@@ -379,7 +379,7 @@ export default function RacePhase() {
         if (!m.has(key)) {
           m.add(key);
           const hData = horsesRef.current.find(h => h.horse_number === leader.hn);
-          const text = CommentaryGenerator.pick(label, leader.name, hData?.jockey_name);
+          const text = CommentaryGenerator.pick(label, { name: leader.name, jockey: hData?.jockey_name ?? '' });
           if (text) {
             setTelop(text);
             if (label === 'MIDDLE') addLog('🔄 中間地点通過');
