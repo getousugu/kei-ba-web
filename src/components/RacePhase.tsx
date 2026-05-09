@@ -43,7 +43,6 @@ export default function RacePhase() {
   const stableRankingsRef = useRef<Record<number, number>>({});
   const suctionStartTimeRef = useRef<number>(0);
   const isIntroTriggered = useRef(false);
-  const isSummaryTriggered = useRef(false);
   const lastLeadCommentTimeRef = useRef<number>(0);
   const lastCrowdCommentTimeRef = useRef<number>(0);
   // Refs to avoid stale closure inside useCallback loop
@@ -168,13 +167,16 @@ export default function RacePhase() {
 
        // Add plain status logs for special events
        (info.events || []).forEach((ev: any) => {
-         if (ev.type === 'interference') addLog(`⚠️ ${ev.horse_name} に不利発生`);
-         if (ev.type === 'guts_display') addLog(`🔥 ${ev.horse_name} が根性を見せる`);
-         if (ev.type === 'breakthrough') addLog(`💥 ${ev.horse_name} が前方を突破！`);
-         if (ev.type === 'corner_boost') addLog(`🌪️ ${ev.horse_name} のまくり！`);
-         if (ev.type === 'wild_explosion') addLog(`⚡ ${ev.horse_name} が爆発的加速！`);
+         if (ev.type === 'bad_start')        addLog(`😱 ${ev.horse_name} が出遅れ`);
+         if (ev.type === 'good_start')       addLog(`🚀 ${ev.horse_name} が好スタート！`);
+         if (ev.type === 'hana_arasoi')      addLog(`🔥 ${ev.horse_name} がハナ争いに参加`);
+         if (ev.type === 'interference')     addLog(`⚠️ ${ev.horse_name} に不利発生`);
+         if (ev.type === 'breakthrough')     addLog(`💥 ${ev.horse_name} が前方を突破！`);
+         if (ev.type === 'corner_boost')     addLog(`🌪️ ${ev.horse_name} のまくり！`);
+         if (ev.type === 'last_spurt')       addLog(`💨 ${ev.horse_name} がラストスパート！`);
+         if (ev.type === 'guts_display')     addLog(`🔥 ${ev.horse_name} が根性を見せる`);
+         if (ev.type === 'wild_explosion')   addLog(`⚡ ${ev.horse_name} が爆発的加速！`);
          if (ev.type === 'wild_control_lost') addLog(`⚠️ ${ev.horse_name} が制御不能に`);
-         if (ev.type === 'bad_start') addLog(`😱 ${ev.horse_name} が出遅れ`);
        });
     }
 

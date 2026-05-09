@@ -183,9 +183,9 @@ export default function ResultPhase() {
     const hitDarkHorse = hitDetails.some(d => d.isHit && d.bet_type === '単勝' && darkHorses.includes(d.horse_numbers[0]));
     if (hitDarkHorse) s.unlockTitle('dark_horse');
 
-    // 惜敗 (単勝賭けた馬がハナ差2着)
+    // 惜敗 (単勝賭けた馬がハナ差またはアタマ差2着)
     const secondResult = results[1];
-    if (secondResult && secondResult.margin === 'ハナ') {
+    if (secondResult && (secondResult.margin === 'ハナ' || secondResult.margin === 'アタマ')) {
       const betOnSecond = myBets.some(b => b.bet_type === '単勝' && b.horse_numbers[0] === secondResult.horse_number);
       if (betOnSecond) s.unlockTitle('just_missed');
     }
@@ -415,6 +415,8 @@ export default function ResultPhase() {
     useGameStore.getState().setMyCoins(newBal);
     useGameStore.getState().unlockTitle('win5_champion');
     useGameStore.getState().unlockTitle('win5_legend');
+    // 賞金首タイトル: キャリーオーバーが大きかった場合
+    if (roomCarryover >= 50000) useGameStore.getState().unlockTitle('win5_hunter');
     peerManager.reportCoinsToHost(newBal);
     handleCloseWin5();
   };

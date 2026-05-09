@@ -264,10 +264,11 @@ export const useGameStore = create<GameState>((set) => ({
     });
   },
   setDebt: (debtAmount, debtTimestamp) => {
-    const ts = debtTimestamp ?? Date.now();
-    set({ debtAmount, debtTimestamp: ts });
+    const amount = Math.max(0, debtAmount);
+    const ts = amount > 0 ? (debtTimestamp ?? Date.now()) : null;
+    set({ debtAmount: amount, debtTimestamp: ts });
     import('../db/db').then(({ db }) => {
-      db.players.update('me', { debt_amount: debtAmount, debt_timestamp: ts }).catch(() => {});
+      db.players.update('me', { debt_amount: amount, debt_timestamp: ts ?? 0 }).catch(() => {});
     });
   },
   resetGameSession: () => set({
