@@ -85,7 +85,9 @@ export default function RaceSetupPhase() {
         horses: horsesWithOdds,
         raceData,
         bettingEndTime: endTime,
-        settings: updatedSettings
+        settings: updatedSettings,
+        sessionHorseWins: useGameStore.getState().sessionHorseWins,
+        lastWinnerHN: useGameStore.getState().lastWinnerHN
       });
 
       // Update local state SECOND

@@ -440,6 +440,17 @@ export default function App() {
               <ul className="space-y-6 text-xs text-gray-400 max-h-80 overflow-y-auto custom-scrollbar pr-2 pb-2">
                 {[
                   {
+                    version: 'v2.1.1',
+                    date: 'May 9, 2026',
+                    content: '対戦UXと臨場感の大幅強化',
+                    details: [
+                      '実況エンジンの大幅拡張（250フレーズ以上の追加）',
+                      'セッション内のストーリー（連勝、前走勝者）への実況言及を実装',
+                      'WIN5サバイバル成功時のエフェクトを豪華に刷新',
+                      'ホスト側の馬券キャンセルバグを含む、複数の不具合修正',
+                    ]
+                  },
+                  {
                     version: 'v2.1.0',
                     date: 'May 9, 2026',
                     content: 'UIの改善と機能追加',

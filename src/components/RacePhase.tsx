@@ -17,7 +17,7 @@ function getTrackPos(progress: number, rx: number, ry: number) {
 }
 
 export default function RacePhase() {
-  const { horses, raceData, role } = useGameStore();
+  const { horses, raceData, role, sessionHorseWins, lastWinnerHN } = useGameStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [countdown, setCountdown] = useState(3);
@@ -157,7 +157,7 @@ export default function RacePhase() {
       }
 
       // Generate rich commentary for Telop only
-      const newLines = CommentaryGenerator.generate(stageIdx, sim, horsesRef.current, finishedHorsesRef.current);
+      const newLines = CommentaryGenerator.generate(stageIdx, sim, horsesRef.current, finishedHorsesRef.current, sessionHorseWins, lastWinnerHN);
       newLines.forEach((text, i) => {
         setTimeout(() => {
           setTelop(text);
@@ -552,11 +552,11 @@ export default function RacePhase() {
         <div className="flex-1 relative">
           <canvas ref={canvasRef} className="w-full h-full" />
 
-          {/* Commentary Telop (On-site feel) */}
+          {/* Commentary Telop */}
           {telop && (
-            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-[80%] max-w-3xl z-40 pointer-events-none">
-              <div className="bg-black/30 backdrop-blur-md border-t border-white/5 rounded-2xl p-4 shadow-2xl animate-message-in">
-                <p className="text-lg md:text-2xl font-black text-white text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] italic tracking-tight">
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-fit max-w-[90%] z-40 pointer-events-none">
+              <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl py-4 px-8 shadow-2xl animate-message-in">
+                <p className="text-xl md:text-2xl font-black text-white text-center drop-shadow-md italic tracking-tight leading-tight whitespace-nowrap">
                   {telop}
                 </p>
               </div>

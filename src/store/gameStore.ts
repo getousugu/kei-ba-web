@@ -53,7 +53,6 @@ interface GameState {
   chatMessages: ChatMessage[];
   raceData: RaceData | null;
   hostBetPool: Bet[];
-  readyPlayers: string[];
   rematchVotes: { continue: string[]; end: string[] };
   roomSettings: RoomSettings;
   bettingEndTime: number | null;
@@ -80,6 +79,8 @@ interface GameState {
     totalPayout: number;
     maxPayoutOdds: number;
   };
+  sessionHorseWins: Record<number, number>;
+  lastWinnerHN: number | null;
 
   // Actions
   setPlayerName: (name: string) => void;
@@ -89,7 +90,6 @@ interface GameState {
   setRole: (role: 'host' | 'guest', roomId: string) => void;
   setRaceData: (data: RaceData | null) => void;
   updateParticipants: (participants: Participant[]) => void;
-  setReadyPlayers: (players?: string[]) => void;
   setHostBetPool: (bets: Bet[]) => void;
   updateHorses: (horses: HorseData[]) => void;
   addBet: (bet: Bet) => void;
@@ -110,6 +110,7 @@ interface GameState {
   setHasCreatedPermanent: (val: boolean) => void;
   setDebt: (amount: number, timestamp?: number) => void;
   resetGameSession: () => void;
+  updateSessionWins: (hn: number) => void;
 }
 
 const savedName = localStorage.getItem('keiba_player_name') || 'プレイヤー';
@@ -150,7 +151,6 @@ export const useGameStore = create<GameState>((set) => ({
   chatMessages: [],
   raceData: null,
   hostBetPool: [],
-  readyPlayers: [],
   rematchVotes: { continue: [], end: [] },
   roomSettings: {
     participantLimit: 12,
@@ -174,6 +174,8 @@ export const useGameStore = create<GameState>((set) => ({
   debtTimestamp: null,
   win5Data: null,
   stats: savedStats,
+  sessionHorseWins: {},
+  lastWinnerHN: null,
 
   setPlayerName: (name) => {
     localStorage.setItem('keiba_player_name', name);
@@ -195,7 +197,6 @@ export const useGameStore = create<GameState>((set) => ({
   setRaceData: (data) => set({ raceData: data }),
   updateParticipants: (participants) => set({ participants }),
   setHostBetPool: (bets) => set({ hostBetPool: bets }),
-  setReadyPlayers: (players = []) => set({ readyPlayers: players }),
   updateHorses: (horses) => set({ horses }),
   addBet: (bet) => set((state) => ({ myBets: [...state.myBets, bet] })),
   removeBet: (betId) => set((state) => ({ myBets: state.myBets.filter(b => b.id !== betId) })),
@@ -280,12 +281,17 @@ export const useGameStore = create<GameState>((set) => ({
     chatMessages: [],
     raceData: null,
     hostBetPool: [],
-    readyPlayers: [],
     rematchVotes: { continue: [], end: [] },
     bettingEndTime: null,
     raceStartTime: null,
     isSpectator: false,
     roomCoinsInitialized: false,
     win5Data: null,
+    sessionHorseWins: {},
+    lastWinnerHN: null,
+  }),
+  updateSessionWins: (hn) => set((state) => {
+    const nextWins = { ...state.sessionHorseWins, [hn]: (state.sessionHorseWins[hn] || 0) + 1 };
+    return { sessionHorseWins: nextWins, lastWinnerHN: hn };
   }),
 }));

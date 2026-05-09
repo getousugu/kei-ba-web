@@ -7,6 +7,15 @@ import { db, checkRetirement } from '../db/db';
 
 const MEDAL = ['🥇', '🥈', '🥉'];
 
+/** 秒数を競馬のタイム形式 (m:ss.f) に変換する */
+function formatFinishTime(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0
+    ? `${m}:${String(Math.floor(s)).padStart(2, '0')}.${(s % 1).toFixed(1).slice(2)}`
+    : `${s.toFixed(1)}`;
+}
+
 export default function ResultPhase() {
   const {
     raceData, myBets, myCoins, role, horses, participants, rematchVotes,
@@ -17,6 +26,7 @@ export default function ResultPhase() {
   const [myVote, setMyVote] = useState<'continue' | 'end' | null>(null);
   const [hasCashedOut, setHasCashedOut] = useState(false);
   const [win5Message, setWin5Message] = useState<string | null>(null);
+  const [showSurviveEffect, setShowSurviveEffect] = useState(false);
 
   const simulation = raceData?.simulation;
   const results: any[] = simulation?.results || [];
@@ -57,6 +67,12 @@ export default function ResultPhase() {
       useGameStore.getState().setMyCoins(newBal);
       // コイン変動をホストに報告
       peerManager.reportCoinsToHost(newBal);
+
+      // WIN5サバイバル演出のトリガー
+      if (hitDetails.some(d => d.bet_type === 'WIN5' && d.isHit)) {
+        setShowSurviveEffect(true);
+        setTimeout(() => setShowSurviveEffect(false), 5000);
+      }
     }
 
     // Update horse records in DB (Host only, to prevent multiple updates)
@@ -99,7 +115,13 @@ export default function ResultPhase() {
         if (idx === 0 && horse?.is_permanent) {
           useGameStore.getState().unlockTitle('owner_win');
         }
+
       });
+    }
+
+    // セッション内勝利数の更新（全員のローカルで実行）
+    if (results.length > 0) {
+      useGameStore.getState().updateSessionWins(results[0].horse_number);
     }
 
     // --- Title Unlock Logic ---
@@ -139,7 +161,7 @@ export default function ResultPhase() {
     else if (s.myCoins >= 500000) s.unlockTitle('rich');
     else if (s.myCoins >= 100000) s.unlockTitle('millionaire');
 
-    if (win5Data?.isActive) s.unlockTitle('win5_survivor');
+    if (win5Data?.isActive && win5Data.survivors.includes(peerManager.myPeerId || '')) s.unlockTitle('win5_survivor');
 
     if (s.myCoins <= 100) s.unlockTitle('poor');
     else if (s.myCoins <= 1000) s.unlockTitle('bankrupt');
@@ -276,7 +298,6 @@ export default function ResultPhase() {
     useGameStore.getState().setSpectator(false);
     useGameStore.getState().setPhase('lobby');
     useGameStore.getState().resetBets();
-    useGameStore.getState().setReadyPlayers();
     useGameStore.getState().setHostBetPool([]);
     useGameStore.getState().setRaceData(null);
     useGameStore.getState().updateHorses([]);
@@ -351,7 +372,6 @@ export default function ResultPhase() {
     s.resetBets();
     s.clearNpcChatMessages();
     s.setHostBetPool([]);
-    s.setReadyPlayers();
     s.setBettingEndTime(null);
     s.setRematchVotes({ continue: [], end: [] });
 
@@ -429,6 +449,35 @@ export default function ResultPhase() {
 
   return (
     <div className="h-screen flex flex-col bg-[#111113] text-gray-200 overflow-hidden" style={{ fontSize: 13 }}>
+      {/* ── WIN5 Survive Flash ── */}
+      {showSurviveEffect && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center pointer-events-none overflow-hidden">
+          <div className="absolute inset-0 bg-emerald-500/10 animate-fade-in backdrop-blur-[2px]" />
+          <div className="relative animate-pop-in text-center">
+            <div className="absolute -inset-20 bg-emerald-500/20 blur-[100px] rounded-full animate-pulse" />
+            <h2 className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-emerald-200 via-emerald-400 to-emerald-600 tracking-tighter uppercase italic leading-none drop-shadow-[0_0_50px_rgba(16,185,129,0.5)]">
+              Survived
+            </h2>
+            <div className="mt-4 flex items-center justify-center gap-4 animate-slide-up">
+              <div className="h-[2px] w-24 bg-gradient-to-r from-transparent to-emerald-400" />
+              <div className="text-xl font-bold text-emerald-400 tracking-[0.5em] uppercase">Stage Clear</div>
+              <div className="h-[2px] w-24 bg-gradient-to-l from-transparent to-emerald-400" />
+            </div>
+            {/* Float up particles */}
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="absolute text-emerald-300 animate-float-up text-2xl" 
+                style={{ 
+                  left: `${Math.random() * 100 - 50}%`, 
+                  top: '50%',
+                  animationDelay: `${i * 0.2}s`,
+                }}>
+                ✨
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
 
       {/* Header */}
       <header className="flex-none h-14 bg-[#1a1a1e] border-b border-[#2a2a32] px-6 flex items-center justify-between">
@@ -546,7 +595,7 @@ export default function ResultPhase() {
                       </div>
                       {r.jockey_name && <div style={{ fontSize: 10 }} className="text-gray-400 font-bold">{r.jockey_name}</div>}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-gray-300 font-bold tabular">{r.finish_time}秒</td>
+                    <td className="px-4 py-3 text-right font-mono text-gray-300 font-bold tabular">{formatFinishTime(r.finish_time)}</td>
                     <td className="px-4 py-3 text-right font-black text-gray-400 text-xs">{r.margin}</td>
                   </tr>
                 ))}

@@ -7,7 +7,7 @@ export default function LobbyPhase() {
   const {
     role, roomId, participants, chatMessages, addChatMessage, roomSettings, setRoomSettings, setPhase,
     roomCarryover, win5Data, setWin5Data,
-    playerTitleId, ownedTitles, setPlayerTitle, myCoins // 追加
+    playerTitleId, ownedTitles, setPlayerTitle, myCoins
   } = useGameStore();
 
   const [chatInput, setChatInput] = useState('');
@@ -126,7 +126,7 @@ export default function LobbyPhase() {
       <header className="h-14 bg-[#16161a] border-b border-[#2a2a32] flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]" />
-          <h2 className="font-black text-white tracking-widest uppercase text-sm">Lobby <span className="text-indigo-400 text-[10px] ml-2">v2.0.0</span></h2>
+          <h2 className="font-black text-white tracking-widest uppercase text-sm">Lobby <span className="text-indigo-400 text-[10px] ml-2">v2.1.1</span></h2>
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -315,14 +315,16 @@ export default function LobbyPhase() {
                 </button>
                 <button
                   onClick={handleStartSetup}
-                  className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 transition-all active:scale-95 uppercase tracking-[0.3em] text-sm"
+                  className="flex-1 py-4 font-black rounded-2xl shadow-xl transition-all active:scale-95 uppercase tracking-[0.3em] text-sm bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20"
                 >
-                  Go to Race Setup
+                  Start Setup
                 </button>
               </>
             ) : (
-              <div className="text-center animate-pulse">
-                <span className="text-sm font-black text-gray-400 uppercase tracking-[0.4em]">Waiting for Host to start...</span>
+              <div className="flex-1 py-4 text-center">
+                <span className="text-xs font-black text-gray-500 uppercase tracking-[0.3em] animate-pulse">
+                  Waiting for Host to Start...
+                </span>
               </div>
             )}
           </div>

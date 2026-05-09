@@ -59,8 +59,16 @@ export default function BettingPhase() {
         const { raceData: rd, horses: hs } = useGameStore.getState();
         const sim = raceSimulator.simulate(rd, hs);
         const updated = { ...rd, simulation: sim };
-        const raceStartTime = Date.now() + 2000;
-        peerManager.broadcast({ type: 'phase_start', phase: 'race', raceData: updated, raceStartTime });
+        const raceStartTime = Date.now() + 4000;
+        const s = useGameStore.getState();
+        peerManager.broadcast({ 
+          type: 'phase_start', 
+          phase: 'race', 
+          raceData: updated, 
+          raceStartTime,
+          sessionHorseWins: s.sessionHorseWins,
+          lastWinnerHN: s.lastWinnerHN
+        });
         useGameStore.getState().setRaceStartTime(raceStartTime);
         useGameStore.getState().setRaceData(updated);
         useGameStore.getState().setPhase('race');
@@ -243,7 +251,15 @@ export default function BettingPhase() {
     const newCoins = myCoins + bet.amount;
     useGameStore.getState().setMyCoins(newCoins);
     useGameStore.getState().removeBet(bet.id);
-    peerManager.sendToHost({ type: 'cancel_bet', betId: bet.id });
+    // ホスト自身のキャンセルはhostBetPoolからも削除してオッズを再計算
+    const currentRole = useGameStore.getState().role;
+    if (currentRole === 'host') {
+      const nextPool = useGameStore.getState().hostBetPool.filter(b => b.id !== bet.id);
+      useGameStore.getState().setHostBetPool(nextPool);
+      peerManager.recalculateAndBroadcastOdds(nextPool);
+    } else {
+      peerManager.sendToHost({ type: 'cancel_bet', betId: bet.id });
+    }
     peerManager.reportCoinsToHost(newCoins);
 
     const cancelMsg = {
@@ -565,7 +581,7 @@ export default function BettingPhase() {
                   <div className="grid grid-cols-12 gap-y-3 gap-x-2 text-[11px] leading-none">
                     <div className="col-span-5">
                       <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">距離適性</div>
-                      <div className="text-gray-100 font-mono font-bold tracking-tight text-[11px]">{`短距離${h.distance_apt?.['短距離'] || 'C'} マ${h.distance_apt?.['マイル'] || 'A'} 中${h.distance_apt?.['中距離'] || 'D'} 長${h.distance_apt?.['長距離'] || 'A'}`}</div>
+                      <div className="text-gray-100 font-mono font-bold tracking-tight text-[11px]">{`短${h.distance_apt?.['短距離'] || '-'} マ${h.distance_apt?.['マイル'] || '-'} 中${h.distance_apt?.['中距離'] || '-'} 長${h.distance_apt?.['長距離'] || '-'}`}</div>
                     </div>
                     <div className="col-span-3">
                       <div className="text-gray-300 font-black uppercase tracking-widest mb-1.5">脚質</div>

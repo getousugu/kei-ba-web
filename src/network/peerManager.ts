@@ -255,7 +255,9 @@ export class PeerManager {
       raceStartTime: store.raceStartTime,
       participants: store.participants,
       win5Data: store.win5Data,
-      roomCarryover: store.roomCarryover
+      roomCarryover: store.roomCarryover,
+      sessionHorseWins: store.sessionHorseWins,
+      lastWinnerHN: store.lastWinnerHN
     });
   }
 
@@ -288,6 +290,8 @@ export class PeerManager {
           ...(data.phase ? { phase: data.phase } : {}),
           ...(data.win5Data !== undefined ? { win5Data: data.win5Data } : {}),
           ...(data.roomCarryover !== undefined ? { roomCarryover: data.roomCarryover } : {}),
+          ...(data.sessionHorseWins !== undefined ? { sessionHorseWins: data.sessionHorseWins } : {}),
+          ...(data.lastWinnerHN !== undefined ? { lastWinnerHN: data.lastWinnerHN } : {}),
           isSpectator: data.phase === 'betting' ? false : (s.isSpectator || shouldSpectate)
         }));
         break;
@@ -302,19 +306,6 @@ export class PeerManager {
       case 'participants_update':
         store.updateParticipants(data.participants);
         break;
-      case 'ready_update':
-        store.setReadyPlayers(data.players);
-        break;
-      // Bug修正漏れ-A: ゲストから 'ready' が来たときホストが集計して ready_update をブロードキャストする
-      case 'ready':
-        if (store.role === 'host') {
-          const currentReady = useGameStore.getState().readyPlayers;
-          const nextReady = data.state
-            ? [...new Set([...currentReady, peerId])]
-            : currentReady.filter((id: string) => id !== peerId);
-          store.setReadyPlayers(nextReady);
-          this.broadcast({ type: 'ready_update', players: nextReady });
-        }
         break;
       // Imp-13: ゲストから 'vote' が来たときホストが集計して rematchVotes を更新し、全員に共有
       case 'vote':
@@ -491,6 +482,7 @@ export class PeerManager {
       this.broadcast({ type: 'participants_update', participants: list });
     }, 50);
   }
+
 
   public broadcast(data: any) {
     if (!this.peer || this.peer.destroyed) return;
