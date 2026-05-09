@@ -310,6 +310,14 @@ export class RaceSimulator {
         }
       }
 
+      // ── コーナー加速（まくり）イベント ──
+      if (phase === 'late' && h.power >= 75 && Math.random() < 0.03) {
+        if (!events.some(e => e.type === 'corner_boost' && e.horse_number === hn)) {
+          luck += luckFactor * 1.5;
+          events.push({ type: 'corner_boost', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+        }
+      }
+
       // ── 速度倍率の補正 ──
       let terrainMod = 1.0;
       if (fieldCondition !== '良') {

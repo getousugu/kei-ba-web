@@ -319,6 +319,18 @@ export class CommentaryGenerator {
       "😫 {name}、限界か！？ずるずると後退していく！！",
       "😫 厳しい！{name}、スタミナ温存が裏目に出たか、完全にガス欠です！！"
     ],
+    BREAKTHROUGH: [
+      "💥 {name}が強引にこじ開けた！！馬群を割って突き進む！！",
+      "💥 前が壁！？いや、{name}が力ずくで突破した！！",
+      "💥 なんというパワーだ！{name}、密集地帯を弾き飛ばすように進出！！",
+      "💥 {name}の重戦車のような突進！前詰まりを自らの力で打開した！！"
+    ],
+    CORNER_BOOST: [
+      "🌪️ {name}がコーナーで外から豪快にまくっていく！！",
+      "🌪️ 勝負をかけたか！？{name}が一気に外からポジションを上げる！！",
+      "🌪️ {name}が素晴らしい手応えで上がっていく！コーナーで加速だ！！",
+      "🌪️ 力強い足取り！{name}がまくりを打って前を射程圏に捉える！！"
+    ],
     STAMINA_FADING: [
       "💦 {name}、少し足取りが怪しくなってきたか！？",
       "💦 {name}、苦しい表情だ！ジョッキーが必死に励ます！！",
@@ -437,6 +449,8 @@ export class CommentaryGenerator {
       if (ev.type === "wild_explosion") lines.push(this.pick("WILD_EXPLOSION", { name: ev.horse_name, jockey: ev.jockey_name }));
       if (ev.type === "wild_control_lost") lines.push(this.pick("WILD_CONTROL_LOST", { name: ev.horse_name, jockey: ev.jockey_name }));
       if (ev.type === "interference") lines.push(this.pick("INTERFERENCE", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "breakthrough") lines.push(this.pick("BREAKTHROUGH", { name: ev.horse_name, jockey: ev.jockey_name }));
+      if (ev.type === "corner_boost") lines.push(this.pick("CORNER_BOOST", { name: ev.horse_name, jockey: ev.jockey_name }));
       if (ev.type === "guts_display") lines.push(this.pick("GUTS", { name: ev.horse_name, jockey: ev.jockey_name }));
       if (ev.type === "stamina_depleted") lines.push(this.pick("STAMINA_DEPLETED", { name: ev.horse_name, jockey: ev.jockey_name }));
       if (ev.type === "stamina_fading") lines.push(this.pick("STAMINA_FADING", { name: ev.horse_name, jockey: ev.jockey_name }));
