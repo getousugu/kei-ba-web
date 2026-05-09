@@ -64,6 +64,7 @@ export class RaceSimulator {
       running_style: (hd.horse ?? hd).running_style,
       score:         hd.score ?? 50.0,
       fatigue:       0.0,  // 疲労値（0〜1）
+      lastTriggered: {} as Record<string, number>, // イベントの重複発動（実況スパム）防止：最終発動ステップを記録
     }));
 
     const pace = this._determinePace(simHorses);
@@ -237,11 +238,13 @@ export class RaceSimulator {
           : 1.0 - (FRONT_LOAD[h.running_style] ?? 1.0) * 0.3
       ) * h.fatigue_mult;
 
-      // ハナ争い（逃げ×ハイペース×前半）
+      // ハナ争い（逃げ馬複数×ハイペース×前半）
       if (h.running_style === '逃げ' && pace === 'ハイペース' && prog < 0.15) {
-        if (Math.random() > h.wisdom / 200) {
+        const escapeCount = simHorses.filter(sh => sh.running_style === '逃げ').length;
+        if (escapeCount > 1 && Math.random() > h.wisdom / 200) {
           fatigueInc *= 1.3;
-          if (!events.some(e => e.type === 'hana_arasoi' && e.horse_number === hn)) {
+          if ((si - (h.lastTriggered['hana_arasoi'] ?? -99)) >= 3) {
+            h.lastTriggered['hana_arasoi'] = si;
             events.push({ type: 'hana_arasoi', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
           }
         }
@@ -294,16 +297,20 @@ export class RaceSimulator {
         const scale = BURST_SCALE[h.running_style] ?? 0;
         const effectiveBurst = (h.burst * 0.85) + (h.power * 0.15);
         burstBonus = (effectiveBurst - 50) * scale * 0.008 * t;
-        if (burstBonus > 0.05 && h.fatigue < 0.8 && Math.random() < 0.1) {
-          if (!events.some(e => e.type === 'last_spurt' && e.horse_number === hn)) {
+        const spurtProb = (h.burst / 1000) + (h.burst >= 70 ? (h.burst - 70) * 0.002 : 0);
+        if (h.fatigue < 0.8 && Math.random() < spurtProb) {
+          if ((si - (h.lastTriggered['last_spurt'] ?? -99)) >= 3) {
+            h.lastTriggered['last_spurt'] = si;
             events.push({ type: 'last_spurt', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
           }
         }
       }
 
       // ── 根性発揮イベント ──
-      if (prog > 0.7 && h.guts > 75 && h.fatigue > 0.6 && Math.random() < 0.05) {
-        if (!events.some(e => e.type === 'guts_display' && e.horse_number === hn)) {
+      const gutsProb = (h.guts / 1000) + (h.guts >= 75 ? (h.guts - 75) * 0.002 : 0);
+      if (prog > 0.7 && h.fatigue > 0.6 && Math.random() < gutsProb) {
+        if ((si - (h.lastTriggered['guts_display'] ?? -99)) >= 3) {
+          h.lastTriggered['guts_display'] = si;
           // 根性による瞬間的な速度アップ（乗算化）
           styleMulti *= (1.0 + (h.guts - 50) * 0.001);
           events.push({ type: 'guts_display', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
@@ -311,9 +318,12 @@ export class RaceSimulator {
       }
 
       // ── コーナー加速（まくり）イベント ──
-      if (phase === 'late' && h.power >= 75 && Math.random() < 0.03) {
-        if (!events.some(e => e.type === 'corner_boost' && e.horse_number === hn)) {
-          luck += luckFactor * 1.5;
+      let hasCornerBoost = false;
+      const cornerProb = (h.power / 1500) + (h.power >= 75 ? (h.power - 75) * 0.001 : 0);
+      if (phase === 'transition' && Math.random() < cornerProb) {
+        hasCornerBoost = true;
+        if ((si - (h.lastTriggered['corner_boost'] ?? -99)) >= 3) {
+          h.lastTriggered['corner_boost'] = si;
           events.push({ type: 'corner_boost', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
         }
       }
@@ -347,6 +357,9 @@ export class RaceSimulator {
         ? gauss(0, luckScale * 2.5)
         : gauss(0, luckScale);
 
+      // イベントによるLuck補正の適用
+      if (hasCornerBoost) luck += luckFactor * 1.5;
+
       // ── イベント（luckへの加減算） ──
 
       // スタート
@@ -357,7 +370,7 @@ export class RaceSimulator {
           else if (r > 0.875) { luck += luckFactor * 1.5; events.push({ type: 'good_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name }); }
         } else {
           const badThr  = 0.10 - (h.wisdom - 50) / 1000;
-          const goodThr = 0.88 + (h.wisdom - 50) / 2000;
+          const goodThr = 0.88 - (h.wisdom - 50) / 2000;
           if (r < badThr)      { luck -= luckFactor * 2.0; events.push({ type: 'bad_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name }); }
           else if (r > goodThr){ luck += luckFactor * 1.5; events.push({ type: 'good_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name }); }
         }
@@ -367,12 +380,19 @@ export class RaceSimulator {
       if (prog < 0.66) {
         const prob = Math.max(0.05, 0.08 - (h.wisdom - 50) / 2000);
         if (Math.random() < prob) {
-          if (h.power >= 75) {
+          const breakthroughProb = (h.power / 1000) + (h.power >= 75 ? (h.power - 75) * 0.003 : 0);
+          if (Math.random() < breakthroughProb) {
             luck -= luckFactor * 0.9;
-            events.push({ type: 'breakthrough', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+            if ((si - (h.lastTriggered['breakthrough'] ?? -99)) >= 3) {
+              h.lastTriggered['breakthrough'] = si;
+              events.push({ type: 'breakthrough', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+            }
           } else {
             luck -= luckFactor * 1.8;
-            events.push({ type: 'interference', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+            if ((si - (h.lastTriggered['interference'] ?? -99)) >= 3) {
+              h.lastTriggered['interference'] = si;
+              events.push({ type: 'interference', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+            }
           }
         }
       }
@@ -420,7 +440,10 @@ export class RaceSimulator {
       const newLeaderHn = sorted[0].hn;
       if (prevRankings[newLeaderHn] && prevRankings[newLeaderHn] > 1) {
         const h = simHorses.find(z => z.horse_number === newLeaderHn)!;
-        events.push({ type: 'leader_change', horse_number: newLeaderHn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+        if ((si - (h.lastTriggered['leader_change'] ?? -99)) >= 3) {
+          h.lastTriggered['leader_change'] = si;
+          events.push({ type: 'leader_change', horse_number: newLeaderHn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+        }
       }
 
       if (sorted.length > 1) {
@@ -443,12 +466,18 @@ export class RaceSimulator {
         const prevRank = prevRankings[h.horse_number];
         if (currRank && prevRank && currRank < prevRank) {
           if (prevRank - currRank >= 3 && Math.random() < 0.3) {
-            events.push({ type: 'pos_up', horse_number: h.horse_number, horse_name: h.horse_name, jockey_name: h.jockey_name });
+            if ((si - (h.lastTriggered['pos_up'] ?? -99)) >= 3) {
+              h.lastTriggered['pos_up'] = si;
+              events.push({ type: 'pos_up', horse_number: h.horse_number, horse_name: h.horse_name, jockey_name: h.jockey_name });
+            }
           } else if (prevRank - currRank >= 1 && currRank > 1 && Math.random() < 0.15) {
             const targetHn = sorted[currRank]?.hn; // sorted is 0-indexed, so sorted[currRank] is rank+1
             if (targetHn) {
               const target = simHorses.find(z => z.horse_number === targetHn)!;
-              events.push({ type: 'overtake', horse_number: h.horse_number, horse_name: h.horse_name, jockey_name: h.jockey_name, target_name: target.horse_name });
+              if ((si - (h.lastTriggered['overtake'] ?? -99)) >= 3) {
+                h.lastTriggered['overtake'] = si;
+                events.push({ type: 'overtake', horse_number: h.horse_number, horse_name: h.horse_name, jockey_name: h.jockey_name, target_name: target.horse_name });
+              }
             }
           }
         }
