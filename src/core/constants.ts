@@ -100,8 +100,9 @@ export const TITLES: TitleDefinition[] = [
   { id: 'seeker', name: '血統の求道者', description: '通算10レース以上参加した', color: 'text-blue-400' },
   { id: 'veteran', name: '歴戦の猛者', description: '通算50レース以上参加した', color: 'text-red-800' },
   { id: 'centaur', name: '人馬一体', description: '通算100レース以上参加した', color: 'text-emerald-600' },
-  { id: 'loser', name: '負け犬', description: '通算10回以上不的中', color: 'text-gray-600' },
+  { id: 'loser', name: '敗北者', description: '通算10回以上不的中', color: 'text-gray-600' },
   { id: 'unlucky_streak', name: '不運の連鎖', description: '通算20回以上不的中', color: 'text-gray-700' },
+  { id: 'debt_loser', name: '負け犬', description: '借金に手を出した者の末路。返済は不可能。', color: 'text-red-900' },
   { id: 'poor', name: '路頭に迷う者', description: '所持金が100C以下になった', color: 'text-orange-900' },
   { id: 'high_stake', name: '鉄火場の主', description: '1レースに500,000C以上賭けた', color: 'text-red-900' },
   { id: 'winner_20', name: '重賞請負人', description: '通算20回以上的中させた', color: 'text-emerald-500' },
@@ -120,14 +121,22 @@ export const TITLES: TitleDefinition[] = [
   { id: 'win5_champion', name: 'WIN5覇者', description: 'WIN5を完全制覇した', color: 'text-yellow-400' },
   { id: 'win5_legend', name: '伝説の5連勝', description: '一度も外さずにWIN5を駆け抜けた', color: 'text-yellow-500' },
   { id: 'win5_hunter', name: '賞金首', description: '高額なキャリーオーバーを奪取した', color: 'text-orange-400' },
+  { id: 'owner_debut', name: '名付け親デビュー', description: '名付け馬を初めて作成した', color: 'text-indigo-300' },
+  { id: 'owner_win', name: '名付け親初勝利', description: '自分の名付け馬が1着になった', color: 'text-yellow-400' },
+  { id: 'favorite_loser', name: '一番人気の呪い', description: '1番人気の馬が4着以下に沈み、かつそれに賭けていた', color: 'text-purple-600' },
+  { id: 'dark_horse', name: '大穴狙い', description: '8番人気以下の馬の単勝を当てた', color: 'text-pink-400' },
+  { id: 'just_missed', name: '惜敗', description: '自分が単勝で賭けた馬が「ハナ」差で2着に敗れた', color: 'text-orange-400' },
+  { id: 'bank_robber', name: '銀行強盗', description: '1レースで1,000,000C以上の払い戻しを受けた', color: 'text-red-500' },
+  { id: 'payout_10m', name: '伝説の投資家', description: '所持金が10,000,000Cを超えた', color: 'text-amber-300' },
+  { id: 'payout_100m', name: '神の領域', description: '所持金が100,000,000Cを超えた', color: 'text-yellow-200' },
 ];
 // horse_generator が必要とする定数
 // (元々 constants.ts になかったため horse_generator の import エラーになっていた)
 export const RARITY_DISTRIBUTION: Record<string, { weight: number; mean: number; std: number }> = {
-  Common: { weight: 60, mean: 45, std: 10 },
+  Common: { weight: 61.75, mean: 45, std: 10 },
   Rare: { weight: 25, mean: 60, std: 8 },
-  Epic: { weight: 12, mean: 75, std: 6 },
-  Legendary: { weight: 3, mean: 88, std: 4 },
+  Epic: { weight: 12, mean: 70, std: 6 },
+  Legendary: { weight: 1.25, mean: 82, std: 5 },
 };
 
 export const WILD_HORSE_STYLE = '暴れ馬';

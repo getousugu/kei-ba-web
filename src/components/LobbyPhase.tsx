@@ -33,6 +33,7 @@ export default function LobbyPhase() {
 
     // 実績・高額
     if (id === 'billionaire' || id === 'whale') return 'bg-indigo-900 text-indigo-200 border-indigo-400/50';
+    if (id === 'debt_loser') return 'bg-[#1a0f0f] text-red-600 border-red-900/30 italic font-medium';
     if (id === 'miracle' || id === 'god_of_gambling') return 'bg-purple-900 text-purple-200 border-purple-400';
 
     // デフォルト
@@ -128,6 +129,19 @@ export default function LobbyPhase() {
           <h2 className="font-black text-white tracking-widest uppercase text-sm">Lobby <span className="text-indigo-400 text-[10px] ml-2">v2.0.0</span></h2>
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => {
+              if (confirm('ルームを退出してログイン画面に戻りますか？')) {
+                peerManager.disconnect();
+                useGameStore.getState().resetGameSession();
+                setPhase('login');
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white rounded-lg border border-red-500/20 transition-all text-[10px] font-black uppercase tracking-widest"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+            Leave Room
+          </button>
           <div className="flex items-center gap-2 px-3 py-1 bg-black/40 rounded-lg border border-[#2a2a32]">
             <span className="text-[10px] text-gray-400 font-black uppercase">Room ID</span>
             <span className="font-mono text-sm text-indigo-400 font-bold">{roomId}</span>
@@ -160,18 +174,6 @@ export default function LobbyPhase() {
                 {[2, 4, 8, 12, 16, 32, 50].map(n => <option key={n} value={n}>{n}名まで</option>)}
               </select>
             </section>
-
-            <section>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 font-mono">Room ID</label>
-              <div className="flex items-center justify-between p-3 bg-black/40 border border-[#2a2a32] rounded-xl">
-                <span className="font-mono text-sm text-indigo-400 font-bold">{roomId}</span>
-                <button onClick={handleCopyId} className="hover:text-white transition-colors">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                </button>
-              </div>
-            </section>
-
-
 
             <section>
               <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">NPCの参戦</label>

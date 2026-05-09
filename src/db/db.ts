@@ -4,6 +4,9 @@ export interface PlayerData {
   id: string;
   name: string;
   global_coins: number;
+  has_created_permanent?: boolean;
+  debt_amount?: number;
+  debt_timestamp?: number;
 }
 
 export interface HorseRecord {
@@ -32,6 +35,7 @@ export interface HorseRecord {
   record?: any;
   total_races: number;
   wins: number;
+  is_permanent?: boolean;
 }
 
 export class KeibaDB extends Dexie {
@@ -57,8 +61,10 @@ export async function initLocalPlayer() {
 }
 
 /** 馬プールの初期生成・補充 */
-export async function ensureHorsePool(targetSize = 80): Promise<void> {
-  const count = await db.horses.count();
+export async function ensureHorsePool(targetSize = 100): Promise<void> {
+  const allHorses = await db.horses.toArray();
+  const temporaryHorses = allHorses.filter(h => !h.is_permanent);
+  const count = temporaryHorses.length;
   if (count >= targetSize) return;
 
   // 動的インポートで循環依存を避ける
@@ -110,6 +116,8 @@ export async function checkRetirement(horseId: number, totalRaces: number): Prom
   else prob = 0.85;
 
   if (Math.random() < prob) {
+    const horse = await db.horses.get(horseId);
+    if (horse?.is_permanent) return false; // 永続馬は引退しない
     await db.horses.delete(horseId);
     return true;
   }

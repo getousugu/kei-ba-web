@@ -90,7 +90,7 @@ export class HorseGenerator {
     ];
 
     const totalRegular = regularWeights.reduce((a, b) => a + b, 0);
-    const wildWeight = totalRegular * (4 / 96);
+    const wildWeight = totalRegular * (3.5 / 96.5);
 
     const allWeights = [...regularWeights, wildWeight];
     const styles = ["逃げ", "先行", "差し", "追込", WILD_HORSE_STYLE];
@@ -162,6 +162,64 @@ export class HorseGenerator {
     };
   }
 
+  private _applyArchetype(stats: Record<string, number>, runningStyle: string, rarity: string): Record<string, number> {
+    // 22% chance to apply archetype
+    if (Math.random() > 0.22) return stats;
+
+    const scaleMap: Record<string, number> = {
+      Legendary: 1.0,
+      Epic: 0.8,
+      Rare: 0.6,
+      Common: 0.5,
+    };
+    const scale = scaleMap[rarity] || 0.5;
+
+    const archetypes = [
+      { name: 'Sprinter', changes: { speed: 15, stamina: -8, guts: -8 } },
+      { name: 'Stamina', changes: { stamina: 12, guts: 8, burst: -10 } },
+      { name: 'Power', changes: { power: 15, wisdom: -15 } },
+      { name: 'Closer', changes: { burst: 12, power: 8, stamina: -12 } },
+      { name: 'Smart', changes: { wisdom: 12, guts: 8, speed: -12 } },
+      { name: 'Guts', changes: { guts: 15, stamina: 8, burst: -8, speed: -8 } },
+      { name: 'Sharp', changes: { burst: 15, wisdom: 8, stamina: -10, power: -10 } },
+      { name: 'Inconsistent', changes: {} },
+    ];
+
+    const weights = new Array(8).fill(1);
+    
+    if (runningStyle === '逃げ') { weights[0] = 2; weights[5] = 2; }
+    else if (runningStyle === '先行') { weights[1] = 2; weights[4] = 2; }
+    else if (runningStyle === '差し') { weights[2] = 2; weights[6] = 2; }
+    else if (runningStyle === '追込') { weights[3] = 2; weights[2] = 2; }
+
+    let selectedArchetype = randomChoice(archetypes, weights);
+    
+    if (runningStyle === WILD_HORSE_STYLE && selectedArchetype.name === 'Inconsistent') {
+       const others = archetypes.filter(a => a.name !== 'Inconsistent');
+       selectedArchetype = randomChoice(others);
+    }
+
+    const newStats = { ...stats };
+
+    if (selectedArchetype.name === 'Inconsistent') {
+      const params = RARITY_DISTRIBUTION[rarity];
+      const statNames = ["speed", "stamina", "power", "burst", "guts", "wisdom"];
+      for (const statName of statNames) {
+        const value = Math.round(randomNormal(params.mean, params.std * 2.0));
+        newStats[statName] = Math.max(10, Math.min(100, value));
+      }
+    } else {
+      for (const [stat, change] of Object.entries(selectedArchetype.changes)) {
+        newStats[stat] = Math.round(newStats[stat] + change * scale);
+      }
+      for (const stat in newStats) {
+        newStats[stat] = Math.max(10, Math.min(100, newStats[stat]));
+      }
+    }
+
+    return newStats;
+  }
+
   generateHorse(usedNames: Set<string> = this._usedNames): any {
     const allNames = this._loadHorseNames();
     let availableNames = allNames.filter(n => !usedNames.has(n));
@@ -175,8 +233,9 @@ export class HorseGenerator {
     usedNames.add(name);
 
     const rarity = this._pickRarity();
-    const stats = this._generateStats(rarity);
+    let stats = this._generateStats(rarity);
     const running_style = this._generateRunningStyle(stats);
+    stats = this._applyArchetype(stats, running_style, rarity);
     const aptitudes = this._generateAptitudes(stats, running_style);
 
     const age = Math.floor(Math.random() * 5) + 3; // 3 to 7

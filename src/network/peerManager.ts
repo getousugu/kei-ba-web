@@ -73,7 +73,7 @@ export class PeerManager {
             fn();
           };
 
-          this.cleanup();
+        this.disconnect();
           this.peer = new Peer(this.getPeerConfig());
 
           let connTimeout: ReturnType<typeof setTimeout>;
@@ -82,11 +82,12 @@ export class PeerManager {
             this.myPeerId = id;
             this.peer!.on('disconnected', () => this.peer?.reconnect());
 
+            const hasDebt = store.debtAmount > 0;
             const conn = this.peer!.connect(roomId, {
               metadata: {
                 playerName: store.playerName,
-                playerTitle: store.playerTitle === '称号コレクター' ? `${store.ownedTitles.length}冠の覇者` : store.playerTitle,
-                playerTitleId: store.playerTitleId
+                playerTitle: hasDebt ? '負け犬' : (store.playerTitle === '称号コレクター' ? `${store.ownedTitles.length}冠の覇者` : store.playerTitle),
+                playerTitleId: hasDebt ? 'debt_loser' : store.playerTitleId
               },
               reliable: true
             });
@@ -128,7 +129,7 @@ export class PeerManager {
     }
   }
 
-  private cleanup() {
+  public disconnect() {
     this.connections.forEach(conn => conn.close());
     this.connections.clear();
     this.guestCoins.clear();
@@ -380,7 +381,7 @@ export class PeerManager {
       case 'room_full':
         alert('参加しようとしたルームは満員です。');
         useGameStore.getState().setPhase('login');
-        this.cleanup();
+        this.disconnect();
         break;
       case 'win5_start':
         store.setWin5Data(data.data);
@@ -469,12 +470,13 @@ export class PeerManager {
       const store = useGameStore.getState();
       if (store.role !== 'host') return;
 
+      const hasDebt = store.debtAmount > 0;
       const list = [
         {
           id: this.myPeerId || 'host',
           name: store.playerName,
-          title: store.playerTitle,
-          titleId: store.playerTitleId || 'beginner',
+          title: hasDebt ? '負け犬' : store.playerTitle,
+          titleId: hasDebt ? 'debt_loser' : (store.playerTitleId || 'beginner'),
           coins: store.myCoins
         },
         ...Array.from(this.connections.entries()).map(([id, conn]) => ({

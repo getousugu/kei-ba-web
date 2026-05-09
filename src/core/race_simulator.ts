@@ -93,7 +93,16 @@ export class RaceSimulator {
       si++;
 
       const allFinished = Object.values(cumPos).every(p => p >= 1.0);
-      if (allFinished || si >= 50) break;
+      if (allFinished || si >= 50) {
+        if (si >= 50) {
+          for (const h of simHorses) {
+            if (finishedAt[h.horse_number] === undefined) {
+              finishedAt[h.horse_number] = 50 + (1.0 - cumPos[h.horse_number]);
+            }
+          }
+        }
+        break;
+      }
     }
 
     const results = this._calcFinalResults(simHorses, finishedAt, distance, fieldCondition);
@@ -212,7 +221,7 @@ export class RaceSimulator {
       const isFront = ['逃げ','先行'].includes(h.running_style);
 
       // staminaで移行期・直線の垂れを緩和（補正値として保持）
-      const staminaBonus = (phase === 'transition' || phase === 'sprint') ? (h.stamina - 50) * 0.003 : 0;
+      const staminaBonus = (phase === 'transition' || phase === 'sprint') ? Math.min(0.06, (h.stamina - 50) * 0.003) : 0;
 
       // ── 疲労の蓄積（案C） ──
       const baseFatigueRate = 1.0 / expectedSteps;
@@ -255,6 +264,10 @@ export class RaceSimulator {
         const t = Math.min(1.0, (prog - 0.85) / 0.15);
         styleMulti = curves[2] + (curves[3] - curves[2]) * t;
       }
+      if (prog >= 0.60 && prog < 0.85) {
+        const cornerBoost = (h.power - 50) * 0.001 * ((prog - 0.60) / 0.25);
+        styleMulti += cornerBoost;
+      }
       styleMulti += staminaBonus;
 
       // ── 疲労デバフ（全区間で連続的に適用） ──
@@ -272,20 +285,15 @@ export class RaceSimulator {
         events.push({ type: 'stamina_depleted', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
       }
 
-      // ── 乱数（Luck）の計算 ──
-      let currentLuckMult = 1.0;
-      if (prog > 0.80) {
-        const t = Math.min(1.0, (prog - 0.80) / 0.20);
-        currentLuckMult = 1.0 + (LATE_LUCK_MULT - 1.0) * t;
-      }
-      let stepLuck = (Math.random() * 2 - 1) * luckFactor * currentLuckMult;
+      // （不要なstepLuck変数を削除しました）
 
       // ── burstボーナス（終盤、徐々に乗せる） ──
       let burstBonus = 0;
       if (prog > 0.85) {
         const t = (prog - 0.85) / 0.15;
         const scale = BURST_SCALE[h.running_style] ?? 0;
-        burstBonus = (h.burst - 50) * scale * 0.008 * t;
+        const effectiveBurst = (h.burst * 0.85) + (h.power * 0.15);
+        burstBonus = (effectiveBurst - 50) * scale * 0.008 * t;
         if (burstBonus > 0.05 && h.fatigue < 0.8 && Math.random() < 0.1) {
           if (!events.some(e => e.type === 'last_spurt' && e.horse_number === hn)) {
             events.push({ type: 'last_spurt', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
@@ -334,7 +342,7 @@ export class RaceSimulator {
       // ── イベント（luckへの加減算） ──
 
       // スタート
-      if (prog < 0.02) {
+      if (prog < 0.02 && !events.some(e => e.horse_number === hn && (e.type === 'bad_start' || e.type === 'good_start'))) {
         const r = Math.random();
         if (h.running_style === '暴れ馬') {
           if (r < 0.25)    { luck -= luckFactor * 3.0; events.push({ type: 'bad_start', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name, wild: true }); }
@@ -349,10 +357,15 @@ export class RaceSimulator {
 
       // 前詰まり（wisdomで回避）
       if (prog < 0.66) {
-        const prob = Math.max(0, 0.05 - (h.wisdom - 50) / 2000);
+        const prob = Math.max(0.05, 0.08 - (h.wisdom - 50) / 2000);
         if (Math.random() < prob) {
-          luck -= luckFactor * 1.8;
-          events.push({ type: 'interference', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          if (h.power >= 75) {
+            luck -= luckFactor * 0.9;
+            events.push({ type: 'breakthrough', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          } else {
+            luck -= luckFactor * 1.8;
+            events.push({ type: 'interference', horse_number: hn, horse_name: h.horse_name, jockey_name: h.jockey_name });
+          }
         }
       }
 

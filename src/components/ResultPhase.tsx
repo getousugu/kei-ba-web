@@ -94,6 +94,11 @@ export default function ResultPhase() {
             await checkRetirement(horse.id, newTotal);
           }
         }
+
+        // 名付け親初勝利判定（ホスト側のローカルで自分が名付け親の場合）
+        if (idx === 0 && horse?.is_permanent) {
+          useGameStore.getState().unlockTitle('owner_win');
+        }
       });
     }
 
@@ -126,7 +131,11 @@ export default function ResultPhase() {
     else if (newStats.maxPayoutOdds >= 300) s.unlockTitle('super_manbaken');
     else if (newStats.maxPayoutOdds >= 100) s.unlockTitle('manbaken');
 
-    if (s.myCoins >= 1000000) s.unlockTitle('billionaire');
+    if (sessionPayout >= 1000000) s.unlockTitle('bank_robber');
+
+    if (s.myCoins >= 100000000) s.unlockTitle('payout_100m');
+    else if (s.myCoins >= 10000000) s.unlockTitle('payout_10m');
+    else if (s.myCoins >= 1000000) s.unlockTitle('billionaire');
     else if (s.myCoins >= 500000) s.unlockTitle('rich');
     else if (s.myCoins >= 100000) s.unlockTitle('millionaire');
 
@@ -155,6 +164,31 @@ export default function ResultPhase() {
 
     if (newStats.totalRaces - newStats.totalWins >= 20) s.unlockTitle('unlucky_streak');
     else if (newStats.totalRaces - newStats.totalWins >= 10) s.unlockTitle('loser');
+
+    // --- Special Condition Titles ---
+    const sortedHorses = [...horses].sort((a, b) => (a.odds_win || 99) - (b.odds_win || 99));
+    
+    // 一番人気の呪い (1番人気が4着以下で、それに賭けていた)
+    const favoriteHorse = sortedHorses[0];
+    if (favoriteHorse) {
+      const top3 = [results[0]?.horse_number, results[1]?.horse_number, results[2]?.horse_number];
+      if (!top3.includes(favoriteHorse.horse_number)) {
+        const betOnFavorite = myBets.some(b => b.horse_numbers.includes(favoriteHorse.horse_number));
+        if (betOnFavorite) s.unlockTitle('favorite_loser');
+      }
+    }
+
+    // 大穴狙い (8番人気以下の単勝的中)
+    const darkHorses = sortedHorses.slice(7).map(h => h.horse_number);
+    const hitDarkHorse = hitDetails.some(d => d.isHit && d.bet_type === '単勝' && darkHorses.includes(d.horse_numbers[0]));
+    if (hitDarkHorse) s.unlockTitle('dark_horse');
+
+    // 惜敗 (単勝賭けた馬がハナ差2着)
+    const secondResult = results[1];
+    if (secondResult && secondResult.margin === 'ハナ') {
+      const betOnSecond = myBets.some(b => b.bet_type === '単勝' && b.horse_numbers[0] === secondResult.horse_number);
+      if (betOnSecond) s.unlockTitle('just_missed');
+    }
 
     // --- Weird / Secret Achievement Logic ---
     // 背水の陣: 所持金が10C以下の状態で的中させた (的中前の所持金で判定)

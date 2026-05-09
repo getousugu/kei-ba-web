@@ -61,6 +61,9 @@ interface GameState {
   isSpectator: boolean;
   roomCoinsInitialized: boolean;
   roomCarryover: number;
+  hasCreatedPermanent: boolean;
+  debtAmount: number;
+  debtTimestamp: number | null;
 
   // WIN5 (サバイバルモード) 用のState
   win5Data: {
@@ -104,6 +107,9 @@ interface GameState {
   setSpectator: (isSpectator: boolean) => void;
   setWin5Data: (data: GameState['win5Data']) => void;
   setRoomCarryover: (val: number) => void;
+  setHasCreatedPermanent: (val: boolean) => void;
+  setDebt: (amount: number, timestamp?: number) => void;
+  resetGameSession: () => void;
 }
 
 const savedName = localStorage.getItem('keiba_player_name') || 'プレイヤー';
@@ -163,6 +169,9 @@ export const useGameStore = create<GameState>((set) => ({
   isSpectator: false,
   roomCoinsInitialized: false,
   roomCarryover: 0,
+  hasCreatedPermanent: false,
+  debtAmount: 0,
+  debtTimestamp: null,
   win5Data: null,
   stats: savedStats,
 
@@ -248,4 +257,34 @@ export const useGameStore = create<GameState>((set) => ({
   setSpectator: (isSpectator) => set({ isSpectator }),
   setWin5Data: (win5Data) => set({ win5Data }),
   setRoomCarryover: (roomCarryover) => set({ roomCarryover }),
+  setHasCreatedPermanent: (hasCreatedPermanent) => {
+    set({ hasCreatedPermanent });
+    import('../db/db').then(({ db }) => {
+      db.players.update('me', { has_created_permanent: hasCreatedPermanent }).catch(() => {});
+    });
+  },
+  setDebt: (debtAmount, debtTimestamp) => {
+    const ts = debtTimestamp ?? Date.now();
+    set({ debtAmount, debtTimestamp: ts });
+    import('../db/db').then(({ db }) => {
+      db.players.update('me', { debt_amount: debtAmount, debt_timestamp: ts }).catch(() => {});
+    });
+  },
+  resetGameSession: () => set({
+    role: null,
+    roomId: null,
+    participants: [],
+    horses: [],
+    myBets: [],
+    chatMessages: [],
+    raceData: null,
+    hostBetPool: [],
+    readyPlayers: [],
+    rematchVotes: { continue: [], end: [] },
+    bettingEndTime: null,
+    raceStartTime: null,
+    isSpectator: false,
+    roomCoinsInitialized: false,
+    win5Data: null,
+  }),
 }));
