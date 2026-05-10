@@ -27,7 +27,7 @@ function BlockBar({ value }: { value: number }) {
 export default function BettingPhase() {
   const { 
     horses, raceData, role, myCoins, myBets, addBet, chatMessages, addChatMessage, 
-    bettingEndTime, isSpectator, roomSettings, win5Data, setWin5Data 
+    bettingEndTime, isSpectator, roomSettings, win5Data, setWin5Data, sessionHorseWins
   } = useGameStore();
 
   const [betType, setBetType] = useState(BET_TYPES[0]);
@@ -48,37 +48,45 @@ export default function BettingPhase() {
 
   // Bug-9, Imp-19: useCallback でラップし、stale closure を防ぐ
   const startRace = useCallback(() => {
-    // isTransitioning は ref でアクセスして最新値を参照
     if (isTransitioningRef.current) return;
     isTransitioningRef.current = true;
     setIsTransitioning(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    setTimeout(() => {
-      try {
-        const { raceData: rd, horses: hs } = useGameStore.getState();
-        const sim = raceSimulator.simulate(rd, hs);
-        const updated = { ...rd, simulation: sim };
-        const raceStartTime = Date.now() + 4000;
-        const s = useGameStore.getState();
-        peerManager.broadcast({ 
-          type: 'phase_start', 
-          phase: 'race', 
-          raceData: updated, 
-          raceStartTime,
-          sessionHorseWins: s.sessionHorseWins,
-          lastWinnerHN: s.lastWinnerHN
-        });
-        useGameStore.getState().setRaceStartTime(raceStartTime);
-        useGameStore.getState().setRaceData(updated);
-        useGameStore.getState().setPhase('race');
-      } catch (err) {
-        console.error(err);
-        alert('レース開始に失敗しました');
-        isTransitioningRef.current = false;
-        setIsTransitioning(false);
-      }
-    }, 2000);
+    let updated: any;
+    let raceStartTime: number;
+    try {
+      const { raceData: rd, horses: hs } = useGameStore.getState();
+      const sim = raceSimulator.simulate(rd, hs);
+      updated = { ...rd, simulation: sim };
+      // 5秒のバッファ: ゲストへの送受信 + パース時間を吸収
+      // ホスト・ゲスト双方がこの絶対時刻を基準にカウントダウンするため、
+      // ここ以外に遅延を入れると非対称になりズレる
+      raceStartTime = Date.now() + 5000;
+      
+      const s = useGameStore.getState();
+      peerManager.broadcast({ 
+        type: 'phase_start', 
+        phase: 'race', 
+        raceData: updated, 
+        raceStartTime,
+        sessionHorseWins: s.sessionHorseWins,
+        lastWinnerHN: s.lastWinnerHN
+      });
+    } catch (err) {
+      console.error(err);
+      alert('レースシミュレーションに失敗しました');
+      isTransitioningRef.current = false;
+      setIsTransitioning(false);
+      return;
+    }
+
+    // ホスト側も即座にレース画面へ遷移。
+    // ゲストと同じタイミングで race フェーズに入ることで非対称なズレを解消。
+    // カウントダウンは raceStartTime の絶対時刻で全員が同期する。
+    useGameStore.getState().setRaceStartTime(raceStartTime);
+    useGameStore.getState().setRaceData(updated);
+    useGameStore.getState().setPhase('race');
   }, []);
 
   // NPC Betting Logic (Host Only)
@@ -307,7 +315,7 @@ export default function BettingPhase() {
           <span className="font-black text-white tracking-wider">馬券購入</span>
           {raceData && (
             <span className="text-xs text-gray-500 font-mono">
-              {raceData.distance}m · <span className={{ 良: 'text-green-400', 稍重: 'text-yellow-400', 重: 'text-orange-400', 不良: 'text-red-400' }[raceData.field_condition as string] || 'text-gray-400'}>{raceData.field_condition}</span> · {raceData.weather}
+              {raceData.distance}m · <span className={{ 良: 'text-green-400', 稍重: 'text-yellow-400', 重: 'text-orange-400', 不良: 'text-red-400' }[raceData.field_condition as string] || 'text-gray-400'}>{raceData.field_condition}</span> · {raceData.weather} · {raceData.course_feature}
             </span>
           )}
         </div>
@@ -397,9 +405,17 @@ export default function BettingPhase() {
                           </div>
                         </td>
                         <td className="px-2 py-2.5">
-                          <div className="font-bold text-gray-100">{RARITY_EMOJI[h.rarity]} {h.name}</div>
+                          <div className="flex items-center gap-1.5 font-bold text-gray-100">
+                            <span>{RARITY_EMOJI[h.rarity]} {h.name}</span>
+                            {(sessionHorseWins[h.horse_number] || 0) >= 1 && (
+                              <span className="text-[9px] font-black text-orange-400 bg-orange-400/10 border border-orange-400/20 px-1 py-0.5 rounded shrink-0">
+                                🔥{sessionHorseWins[h.horse_number]}W
+                              </span>
+                            )}
+                          </div>
                           <div style={{ fontSize: 10 }} className="text-gray-300 font-bold">{h.age}歳{h.gender} · {h.running_style}</div>
                         </td>
+
                         <td className="px-2 py-2.5 text-right text-gray-100 font-bold" style={{ fontSize: 11 }}>{h.jockey_name || '—'}</td>
                         <td className="px-2 py-2.5 text-right font-mono font-black text-yellow-500 text-sm tabular-nums">{h.odds_win?.toFixed(1)}</td>
                         <td className="px-2 py-2.5 text-right font-mono text-gray-300 font-bold tabular-nums">{h.odds_place?.toFixed(1)}</td>
@@ -415,8 +431,8 @@ export default function BettingPhase() {
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
                 {chatMessages.length === 0 && <div className="text-gray-700 text-xs italic">メッセージはありません</div>}
-                {chatMessages.map((msg, i) => (
-                  <div key={i} className="text-xs animate-fade-in bg-white/5 p-1.5 rounded border border-white/5">
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} className="text-xs animate-fade-in bg-white/5 p-1.5 rounded border border-white/5">
                     <span className="text-indigo-300 font-black">{msg.sender}</span>
                     <span className="text-gray-500 mx-1">›</span>
                     <span className="text-gray-100 whitespace-pre-wrap leading-relaxed font-medium">{msg.text}</span>

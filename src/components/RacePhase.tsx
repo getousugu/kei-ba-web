@@ -4,7 +4,8 @@ import { peerManager } from '../network/peerManager';
 import { CommentaryGenerator } from '../core/commentary_generator';
 import { HORSE_COLORS } from '../core/constants';
 
-const STAGE_DUR = 2500; // Time per simulation stage (ms)
+const STAGE_DUR = 2500;  // Time per simulation stage (ms)
+const MAX_COUNTDOWN = 5; // カウントダウン上限 (= raceStartTime バッファと揃える)
 const GOAL_STAGE_DUR = 5000; // Extra time for the final stretch
 
 function lerp(a: number, b: number, t: number) {
@@ -17,7 +18,7 @@ function getTrackPos(progress: number, rx: number, ry: number) {
 }
 
 export default function RacePhase() {
-  const { horses, raceData, role, sessionHorseWins, lastWinnerHN } = useGameStore();
+  const { horses, raceData, role, sessionHorseWins, lastWinnerHN, raceStartTime } = useGameStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [countdown, setCountdown] = useState(3);
@@ -48,7 +49,7 @@ export default function RacePhase() {
   // Refs to avoid stale closure inside useCallback loop
   const isStartedRef = useRef(false);
   const isFinishedRef = useRef(false);
-  const startTimeRef = useRef<number>(Date.now());
+  // raceStartTime はストアから直接読む。ローカル fallback は使わない（ズレの原因になる）
 
   const horsesRef = useRef(horses);
   const simRef = useRef(raceData?.simulation);
@@ -57,6 +58,12 @@ export default function RacePhase() {
   useEffect(() => { horsesRef.current = horses; }, [horses]);
   useEffect(() => { simRef.current = raceData?.simulation; }, [raceData?.simulation]);
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commentary]);
+
+  // ペースをシミュレーションデータから即座にセット（ステージ遷移待ちにしない）
+  useEffect(() => {
+    const p = raceData?.simulation?.pace;
+    if (p) setPace(p);
+  }, [raceData?.simulation?.pace]);
 
   if (!horses || horses.length === 0 || !raceData || !raceData.simulation) {
     return (
@@ -85,14 +92,16 @@ export default function RacePhase() {
     const W = canvas.width;
     const H = canvas.height;
 
-    // Use absolute time for sync
-    const raceStart = useGameStore.getState().raceStartTime || startTimeRef.current;
+    // 全プレイヤーで共通の絶対時刻を基準にする。ローカル fallback は使わない
+    const raceStart = useGameStore.getState().raceStartTime;
+    if (!raceStart) { rafRef.current = requestAnimationFrame(loop); return; }
     const now = Date.now();
     const elapsed = now - raceStart;
 
     // Countdown logic
     if (elapsed < 0) {
-      const cd = Math.ceil(Math.abs(elapsed) / 1000);
+      // MAX_COUNTDOWN でキャップ（接続が早かったゲストが大きな数字を見るのを防ぐ）
+      const cd = Math.min(MAX_COUNTDOWN, Math.ceil(Math.abs(elapsed) / 1000));
       setCountdown(cd);
 
       // Trigger Intro Commentary when countdown reaches 3 or less
@@ -151,9 +160,8 @@ export default function RacePhase() {
       lastStageRef.current = stageIdx;
       const info = sim.stages[stageIdx];
 
-      if (stageIdx === 0 && sim.pace) {
-        setPace(sim.pace);
-        addLog(`🏁 レース開始 (ペース: ${sim.pace})`);
+      if (stageIdx === 0) {
+        if (sim.pace) addLog(`🏁 レース開始 (ペース: ${sim.pace})`);
       }
 
       // Generate rich commentary for Telop only

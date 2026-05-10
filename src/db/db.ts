@@ -38,15 +38,29 @@ export interface HorseRecord {
   is_permanent?: boolean;
 }
 
+export interface RaceHistory {
+  id?: number;
+  race_name: string;
+  date: number;
+  bet_type: string;
+  bet_horses: number[];
+  bet_amount: number;
+  is_hit: boolean;
+  payout: number;
+  winners: any[]; // Top 3 horses
+}
+
 export class KeibaDB extends Dexie {
   players!: Table<PlayerData, string>;
   horses!: Table<HorseRecord, number>;
+  race_history!: Table<RaceHistory, number>;
 
   constructor() {
     super('KeibaWebDatabase');
-    this.version(2).stores({
+    this.version(3).stores({
       players: 'id, name',
       horses: '++id, name, rarity',
+      race_history: '++id, date',
     });
   }
 }

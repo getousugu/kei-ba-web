@@ -3,6 +3,7 @@ import type { HorseData, Bet } from '../core/odds_calculator';
 export type GamePhase = 'login' | 'lobby' | 'setup' | 'betting' | 'race' | 'result';
 
 export interface RaceData {
+  race_name?: string;
   distance?: number;
   field_condition?: string;
   weather?: string;
@@ -34,6 +35,7 @@ export interface RoomSettings {
   distance: string;
   fieldCondition: string;
   weather: string;
+  courseFeature: string;
   hostMigration: boolean;
   realOdds: boolean;
 }
@@ -161,6 +163,7 @@ export const useGameStore = create<GameState>((set) => ({
     distance: 'random',
     fieldCondition: 'random',
     weather: 'random',
+    courseFeature: 'random',
     hostMigration: true,
     realOdds: false,
   },

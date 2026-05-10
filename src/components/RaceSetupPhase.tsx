@@ -9,6 +9,17 @@ import { drawHorsesFromPool } from '../db/db';
 const WEATHER_OPTIONS = ['random', '晴', '曇', '雨', '雪'];
 const WEATHER_ICONS: Record<string, string> = { random: '—', 晴: '☀', 曇: '☁', 雨: '🌧', 雪: '🌨' };
 
+function generateRaceName(distance: number, weather: string): string {
+  const prefix = weather === '雪' ? '白銀' : weather === '雨' ? '雨情' : distance >= 3000 ? '鉄人' : '新鋭';
+  let category = '特別';
+  if (distance >= 2500) category = '大賞典';
+  else if (distance >= 1900) category = '中距離S';
+  else if (distance >= 1500) category = 'マイルC';
+  else category = 'スプリント';
+  
+  return `${prefix}${category}`;
+}
+
 async function buildRace(
   horseCount: number,
   distance: number,
@@ -25,9 +36,10 @@ async function buildRace(
 }
 
 export default function RaceSetupPhase() {
-  const { role, setPhase, roomSettings, setRoomSettings, raceData } = useGameStore();
+  const { role, setPhase, roomSettings, setRoomSettings, raceData, win5Data } = useGameStore();
   const isHost = role === 'host';
   const [loading, setLoading] = useState(false);
+  const isWin5Active = !!win5Data?.isActive;
 
   const [cfg, setCfg] = useState({
     horseCount: roomSettings.horseCount || 12,
@@ -35,6 +47,7 @@ export default function RaceSetupPhase() {
     fieldCondition: roomSettings.fieldCondition || 'random',
     weather: roomSettings.weather || 'random',
     bettingTime: roomSettings.bettingTime || 60,
+    courseFeature: roomSettings.courseFeature || 'random',
   });
 
   const resolveConfig = () => {
@@ -54,15 +67,21 @@ export default function RaceSetupPhase() {
       ? wList[Math.floor(Math.random() * wList.length)]
       : cfg.weather;
 
-    return { distance, fieldCondition: fc, weather };
+    const cfList = ['平坦', '坂あり', '直線長', 'コーナー多'];
+    const courseFeature = cfg.courseFeature === 'random'
+      ? cfList[Math.floor(Math.random() * cfList.length)]
+      : cfg.courseFeature;
+
+    return { distance, fieldCondition: fc, weather, courseFeature };
   };
 
   const handleStartGame = async () => {
     setLoading(true);
     try {
-      const { distance, fieldCondition, weather } = resolveConfig();
+      const { distance, fieldCondition, weather, courseFeature } = resolveConfig();
       const horsesWithOdds = await buildRace(cfg.horseCount, distance, fieldCondition, weather, roomSettings.realOdds);
-      const raceData = { distance, field_condition: fieldCondition, weather, course_feature: '平坦' };
+      const raceName = generateRaceName(distance, weather);
+      const raceData = { race_name: raceName, distance, field_condition: fieldCondition, weather, course_feature: courseFeature };
 
       const finalBettingTime = cfg.bettingTime || 120;
       const endTime = Date.now() + Math.max(10, finalBettingTime) * 1000;
@@ -74,6 +93,7 @@ export default function RaceSetupPhase() {
         distance: cfg.distance,
         fieldCondition: cfg.fieldCondition,
         weather: cfg.weather,
+        courseFeature: cfg.courseFeature,
         bettingTime: finalBettingTime,
       };
       useGameStore.getState().setRoomSettings(updatedSettings);
@@ -186,8 +206,8 @@ export default function RaceSetupPhase() {
             <div className="panel rounded-xl overflow-hidden">
               <div className="panel-header">コース距離</div>
               <div className="p-3">
-                <select value={useGameStore.getState().win5Data?.isActive ? 'random' : cfg.distance} 
-                  disabled={useGameStore.getState().win5Data?.isActive}
+                <select value={isWin5Active ? 'random' : cfg.distance} 
+                  disabled={isWin5Active}
                   onChange={e => setCfg({ ...cfg, distance: e.target.value })}
                   className="w-full bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer disabled:opacity-50">
                   <option value="random" className="bg-[#1a1a1e]">おまかせ (ランダム)</option>
@@ -203,8 +223,8 @@ export default function RaceSetupPhase() {
               <div className="panel rounded-xl overflow-hidden">
                 <div className="panel-header">馬場状態</div>
                 <div className="p-3">
-                  <select value={useGameStore.getState().win5Data?.isActive ? 'random' : cfg.fieldCondition} 
-                    disabled={useGameStore.getState().win5Data?.isActive}
+                  <select value={isWin5Active ? 'random' : cfg.fieldCondition} 
+                    disabled={isWin5Active}
                     onChange={e => setCfg({ ...cfg, fieldCondition: e.target.value })}
                     className={`w-full bg-transparent text-sm font-bold focus:outline-none cursor-pointer disabled:opacity-50 ${(fieldColor as any)[cfg.fieldCondition] || 'text-white'}`}>
                     <option value="random" className="text-white bg-[#1a1a1e]">おまかせ</option>
@@ -215,14 +235,31 @@ export default function RaceSetupPhase() {
               <div className="panel rounded-xl overflow-hidden">
                 <div className="panel-header">天候</div>
                 <div className="p-3 flex items-center gap-2">
-                  <span className="text-lg leading-none">{WEATHER_ICONS[useGameStore.getState().win5Data?.isActive ? 'random' : cfg.weather]}</span>
-                  <select value={useGameStore.getState().win5Data?.isActive ? 'random' : cfg.weather} 
-                    disabled={useGameStore.getState().win5Data?.isActive}
+                  <span className="text-lg leading-none">{WEATHER_ICONS[isWin5Active ? 'random' : cfg.weather]}</span>
+                  <select value={isWin5Active ? 'random' : cfg.weather} 
+                    disabled={isWin5Active}
                     onChange={e => setCfg({ ...cfg, weather: e.target.value })}
                     className="flex-1 bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer disabled:opacity-50">
                     {WEATHER_OPTIONS.map(w => <option key={w} value={w} className="bg-[#1a1a1e]">{w === 'random' ? 'おまかせ' : w}</option>)}
                   </select>
                 </div>
+              </div>
+            </div>
+
+            {/* コース特性 */}
+            <div className="panel rounded-xl overflow-hidden">
+              <div className="panel-header">コース特性</div>
+              <div className="p-3">
+                <select
+                  value={cfg.courseFeature}
+                  onChange={e => setCfg({ ...cfg, courseFeature: e.target.value })}
+                  className="w-full bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer">
+                  <option value="random" className="bg-[#1a1a1e]">おまかせ (ランダム)</option>
+                  <option value="平坦" className="bg-[#1a1a1e]">平坦 — 標準的なコース</option>
+                  <option value="坂あり" className="bg-[#1a1a1e]">坂あり — パワー型有利</option>
+                  <option value="直線長" className="bg-[#1a1a1e]">直線長 — バースト型有利</option>
+                  <option value="コーナー多" className="bg-[#1a1a1e]">コーナー多 — 賢さ利く</option>
+                </select>
               </div>
             </div>
 

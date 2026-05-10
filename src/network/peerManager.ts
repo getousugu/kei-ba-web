@@ -156,10 +156,11 @@ export class PeerManager {
         console.log('[PeerManager] New guest connection:', conn.peer);
         this.connections.set(conn.peer, conn);
         this.setupConnectionHandlers(conn);
+        // ゲストのコンテンツ準備を少し待ってからステートを同期。300msは必要最小限。
         setTimeout(() => {
           this.updateParticipantsOnHost();
           this.syncInitialState(conn);
-        }, 1000);
+        }, 300);
       });
     });
 
@@ -305,7 +306,6 @@ export class PeerManager {
         break;
       case 'participants_update':
         store.updateParticipants(data.participants);
-        break;
         break;
       // Imp-13: ゲストから 'vote' が来たときホストが集計して rematchVotes を更新し、全員に共有
       case 'vote':

@@ -100,20 +100,22 @@ export class OddsCalculator {
   }
 
   updateOddsWithBets(horsesData: HorseData[], bets: Bet[]): HorseData[] {
-    const totalBetAmount = bets
-      .filter(b => b.bet_type === "単勝")
-      .reduce((sum, b) => sum + b.amount, 0);
+    let totalBetAmount = 0;
+    const horseBetAmounts: Record<number, number> = {};
+
+    // WIN5は別の賞金プールなのでオッズ計算から除外
+    const validBets = bets.filter(b => b.bet_type !== "WIN5");
+
+    validBets.forEach(bet => {
+      totalBetAmount += bet.amount;
+      // 複数頭の馬券（馬連・3連単など）は、賭け金を関係する馬に均等に分配してオッズに反映
+      const amountPerHorse = bet.amount / bet.horse_numbers.length;
+      bet.horse_numbers.forEach(num => {
+        horseBetAmounts[num] = (horseBetAmounts[num] || 0) + amountPerHorse;
+      });
+    });
 
     if (totalBetAmount === 0) return horsesData;
-
-    const horseBetAmounts: Record<number, number> = {};
-    bets.forEach(bet => {
-      if (bet.bet_type === "単勝") {
-        bet.horse_numbers.forEach(num => {
-          horseBetAmounts[num] = (horseBetAmounts[num] || 0) + bet.amount;
-        });
-      }
-    });
 
     horsesData.forEach(hd => {
       const horseNum = hd.horse_number;

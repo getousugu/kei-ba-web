@@ -114,9 +114,12 @@ export default function LobbyPhase() {
     });
   };
 
+  const [copyToast, setCopyToast] = useState(false);
+
   const handleCopyId = () => {
     navigator.clipboard.writeText(roomId || '');
-    alert('ルームIDをコピーしました');
+    setCopyToast(true);
+    setTimeout(() => setCopyToast(false), 2000);
   };
 
   return (
@@ -145,8 +148,13 @@ export default function LobbyPhase() {
           <div className="flex items-center gap-2 px-3 py-1 bg-black/40 rounded-lg border border-[#2a2a32]">
             <span className="text-[10px] text-gray-400 font-black uppercase">Room ID</span>
             <span className="font-mono text-sm text-indigo-400 font-bold">{roomId}</span>
-            <button onClick={handleCopyId} className="hover:text-white transition-colors">
+            <button onClick={handleCopyId} className="relative hover:text-white transition-colors">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+              {copyToast && (
+                <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-[9px] font-black px-2 py-0.5 rounded whitespace-nowrap pointer-events-none">
+                  Copied!
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -401,8 +409,8 @@ export default function LobbyPhase() {
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {chatMessages.length === 0 && <div className="text-center py-20 text-gray-700 text-xs italic">メッセージはありません</div>}
-            {chatMessages.map((msg, i) => (
-              <div key={i} className="animate-fade-in">
+            {chatMessages.map((msg) => (
+              <div key={msg.id} className="animate-fade-in">
                 <div className="flex items-baseline gap-2 mb-0.5">
                   <span className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter">{msg.sender}</span>
                 </div>

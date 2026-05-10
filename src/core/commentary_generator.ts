@@ -567,19 +567,23 @@ export class CommentaryGenerator {
       lines.push(this.pick(paceKey));
       
       const leader = stage.sorted_horses[0];
-      if (leader && !finishedHNs.has(leader.horse_number)) lines.push(this.pick("LEADER", { name: leader.horse_name, jockey: leader.jockey_name }));
+      const leaderData = horses.find(h => h.horse_number === leader?.horse_number);
+      if (leaderData && !finishedHNs.has(leader.horse_number)) lines.push(this.pick("LEADER", { name: leaderData.name, jockey: leaderData.jockey_name }));
     } else if (stage.stage_name === "middle") {
       lines.push(this.pick("MIDDLE"));
       const leader = stage.sorted_horses[0];
       const second = stage.sorted_horses[1];
-      if (leader && second && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
+      const leaderData = horses.find(h => h.horse_number === leader?.horse_number);
+      const secondData = horses.find(h => h.horse_number === second?.horse_number);
+      if (leaderData && secondData && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
         if (Math.random() > 0.5) {
-          lines.push(`${leader.horse_name}が依然として先頭！ピッタリと${second.horse_name}がマークする！`);
+          lines.push(`${leaderData.name}が依然として先頭！ピッタリと${secondData.name}がマークする！`);
         } else {
           if (stage.sorted_horses.length > 3) {
             const mid = stage.sorted_horses[Math.floor(stage.sorted_horses.length / 2)];
-            if (!finishedHNs.has(mid.horse_number)) {
-              lines.push(this.pick("CHASING", { name: mid.horse_name, jockey: mid.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
+            const midData = horses.find(h => h.horse_number === mid?.horse_number);
+            if (midData && !finishedHNs.has(mid.horse_number)) {
+              lines.push(this.pick("CHASING", { name: midData.name, jockey: midData.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
             }
           }
         }
@@ -594,15 +598,18 @@ export class CommentaryGenerator {
     } else if (stageIdx % 2 === 0 && stageIdx < sim.stages.length - 2) {
       const leader = stage.sorted_horses[0];
       const second = stage.sorted_horses[1];
-      if (leader && second && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
+      const leaderData = horses.find(h => h.horse_number === leader?.horse_number);
+      const secondData = horses.find(h => h.horse_number === second?.horse_number);
+      if (leaderData && secondData && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
         const r = Math.random();
         if (r > 0.6) {
-          lines.push(`${leader.horse_name}が依然として先頭！ピッタリと${second.horse_name}がマークする！`);
+          lines.push(`${leaderData.name}が依然として先頭！ピッタリと${secondData.name}がマークする！`);
         } else {
           if (stage.sorted_horses.length > 3) {
             const mid = stage.sorted_horses[Math.floor(stage.sorted_horses.length / 2)];
-            if (!finishedHNs.has(mid.horse_number)) {
-              lines.push(this.pick("CHASING", { name: mid.horse_name, jockey: mid.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
+            const midData = horses.find(h => h.horse_number === mid?.horse_number);
+            if (midData && !finishedHNs.has(mid.horse_number)) {
+              lines.push(this.pick("CHASING", { name: midData.name, jockey: midData.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
             }
           }
         }

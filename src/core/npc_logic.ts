@@ -123,16 +123,19 @@ export function generateNPCBet(horses: HorseData[]): Bet | null {
     const sorted = [...candidates].sort((a, b) => (b as any).score - (a as any).score);
     selected = sorted.slice(0, needed);
   } else if (personalityKey === "逃げ馬信者") {
+    // 逃げ馬 → 先行 → 全体 の順でフォールバック
     const escape = candidates.filter(h => (h as any).running_style === "逃げ");
-    const pool = escape.length > 0 ? escape : candidates;
+    const senkou = candidates.filter(h => (h as any).running_style === "先行");
+    const pool = escape.length >= needed ? escape : (senkou.length >= needed ? senkou : [...escape, ...senkou].concat(candidates).slice(0, needed * 3));
     selected = pool.sort(() => Math.random() - 0.5).slice(0, needed);
   } else if (personalityKey === "大穴狙い") {
     const bigOdds = candidates.filter(h => (h.odds_win || 0) >= 15);
     const pool = bigOdds.length > 0 ? bigOdds : candidates;
     selected = pool.sort(() => Math.random() - 0.5).slice(0, needed);
   } else if (personalityKey === "一点集中型") {
+    // スコア上位 needed 頭に全力投資
     const sorted = [...candidates].sort((a, b) => (b as any).score - (a as any).score);
-    selected = [sorted[0]];
+    selected = sorted.slice(0, needed);
   } else if (personalityKey === "人気逆張り") {
     const notFav = candidates.filter(h => h.popularity !== 1);
     const pool = notFav.length > 0 ? notFav : candidates;

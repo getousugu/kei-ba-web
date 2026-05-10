@@ -16,6 +16,17 @@ function formatFinishTime(sec: number): string {
     : `${s.toFixed(1)}`;
 }
 
+function generateRaceName(distance: number, weather: string): string {
+  const prefix = weather === '雪' ? '白銀' : weather === '雨' ? '雨情' : distance >= 3000 ? '鉄人' : '新鋭';
+  let category = '特別';
+  if (distance >= 2500) category = '大賞典';
+  else if (distance >= 1900) category = '中距離S';
+  else if (distance >= 1500) category = 'マイルC';
+  else category = 'スプリント';
+  
+  return `${prefix}${category}`;
+}
+
 export default function ResultPhase() {
   const {
     raceData, myBets, myCoins, role, horses, participants, rematchVotes,
@@ -75,8 +86,9 @@ export default function ResultPhase() {
       }
     }
 
-    // Update horse records in DB (Host only, to prevent multiple updates)
-    if (role === 'host' && results.length > 0) {
+    // Update horse records in DB (全クライアントが自分のローカルDBを更新。
+    // 各クライアントは同じ馬プールを持つため、全員独立に記録を更新する。)
+    if (results.length > 0) {
       results.forEach(async (r: any, idx: number) => {
         const horse = horses.find(h => h.horse_number === r.horse_number);
         if (horse && horse.id) {
@@ -285,6 +297,31 @@ export default function ResultPhase() {
       }, 1000);
     }
 
+    // --- Save Race History --- (WIN5 bets は収支グラフ用に除外)
+    if (!paid && results.length > 0) {
+      const betsToRecord = myBets.filter(b => b.bet_type !== 'WIN5');
+      if (betsToRecord.length > 0) {
+        const historyEntries = betsToRecord.map(bet => {
+          const detail = hitDetails.find(d => d.id === bet.id);
+          return {
+            race_name: raceData?.race_name || '一般レース',
+            date: Date.now(),
+            bet_type: bet.bet_type,
+            bet_horses: bet.horse_numbers,
+            bet_amount: bet.amount,
+            is_hit: !!detail?.isHit,
+            payout: detail?.payout || 0,
+            winners: results.slice(0, 3).map(r => ({
+              horse_number: r.horse_number,
+              horse_name: r.horse_name,
+              jockey_name: r.jockey_name
+            }))
+          };
+        });
+        db.race_history.bulkAdd(historyEntries).catch(err => console.error('Failed to save history', err));
+      }
+    }
+
     setPaid(true);
   }, [hitDetails]);
 
@@ -348,7 +385,11 @@ export default function ResultPhase() {
       nextWeather = wList[Math.floor(Math.random() * wList.length)];
     }
 
-    const nextCourseFeature = rd.course_feature || '平坦';
+    let nextCourseFeature = rd.course_feature || '平坦';
+    if (nextSettings.courseFeature === 'random') {
+      const cfList = ['平坦', '坂あり', '直線長', 'コーナー多'];
+      nextCourseFeature = cfList[Math.floor(Math.random() * cfList.length)];
+    }
 
     const { drawHorsesFromPool } = await import('../db/db');
     const { oddsCalculator: oc } = await import('../core/odds_calculator');
@@ -360,7 +401,9 @@ export default function ResultPhase() {
       (h as any).score = oc.calculateCompositeScore(h, nextDistance, nextFC, nextCourseFeature);
     });
     const horsesWithOdds = oc.calculateInitialOdds(freshHorses, nextSettings.realOdds);
+    const nextRaceName = generateRaceName(nextDistance, nextWeather);
     const freshRaceData = {
+      race_name: nextRaceName,
       distance: nextDistance,
       field_condition: nextFC,
       weather: nextWeather,

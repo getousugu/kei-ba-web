@@ -63,9 +63,21 @@ export class RaceSimulator {
       jockey_name:   hd.jockey_name,
       running_style: (hd.horse ?? hd).running_style,
       score:         hd.score ?? 50.0,
-      fatigue:       0.0,  // 疲労値（0〜1）
-      lastTriggered: {} as Record<string, number>, // イベントの重複発動（実況スパム）防止：最終発動ステップを記録
+      fatigue:       0.0,
+      lastTriggered: {} as Record<string, number>,
+      wild_curve:    null as [number, number, number, number] | null,
     }));
+
+    // 暴れ馬はレースごとにランダムなスピードカーブを持つ
+    for (const h of simHorses) {
+      if (h.running_style === '暴れ馬') {
+        // 前半・中盤・移行期・直線 の4区間をランダムに生成
+        // gaussでバラツかせ、平均が約1.0になるように調整
+        const r = () => gauss(1.0, 0.06);
+        const curve: [number, number, number, number] = [r(), r(), r(), r()];
+        h.wild_curve = curve;
+      }
+    }
 
     const pace = this._determinePace(simHorses);
 
@@ -253,7 +265,8 @@ export class RaceSimulator {
       h.fatigue = Math.min(1.0, h.fatigue + fatigueInc);
 
       // ── 速度倍率の決定（線形補間で滑らかにする） ──
-      const curves = STYLE_CURVES[h.running_style] || [1, 1, 1, 1];
+      // 暴れ馬は wild_curve を優先、なければ通常の STYLE_CURVESを使用
+      const curves = (h.wild_curve as [number, number, number, number] | null) ?? STYLE_CURVES[h.running_style] ?? [1, 1, 1, 1];
       let styleMulti = 1.0;
       if (prog < 0.33) {
         styleMulti = curves[0];
@@ -491,17 +504,11 @@ export class RaceSimulator {
       positions_progress: posProgress,
       rankings,
       events,
-      sorted_horses: sorted.map((x, i) => {
-        const h = simHorses.find(z => z.horse_number === x.hn)!;
-        return {
-          horse_number:  x.hn,
-          horse_name:    h.horse_name,
-          jockey_name:   h.jockey_name,
-          running_style: h.running_style,
-          position:      i + 1,
-          progress:      Math.min(1.0, x.p),
-        };
-      }),
+      sorted_horses: sorted.map((x, i) => ({
+        horse_number: x.hn,
+        position:     i + 1,
+        progress:     Math.min(1.0, x.p),
+      })),
     };
   }
 

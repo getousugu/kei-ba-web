@@ -253,7 +253,7 @@ export class HorseGenerator {
 
     return {
       name,
-      age: Math.floor(Math.random() * 5) + 3,
+      age,       // 一度計算した値を再利用
       gender,
       coat_color,
       rarity,

@@ -23,6 +23,8 @@ export default function App() {
   const [secretCode, setSecretCode] = useState('');
   const [showPatchNotes, setShowPatchNotes] = useState(false);
   const [showHorseNaming, setShowHorseNaming] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyItems, setHistoryItems] = useState<any[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -40,6 +42,16 @@ export default function App() {
       });
     });
   }, []);
+
+  useEffect(() => {
+    if (showHistory) {
+      import('./db/db').then(({ db }) => {
+        db.race_history.orderBy('date').reverse().limit(100).toArray().then(items => {
+          setHistoryItems(items);
+        });
+      });
+    }
+  }, [showHistory]);
 
   useEffect(() => {
     if (debtAmount > 0 && debtTimestamp) {
@@ -140,7 +152,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-[#0c0c0e] text-gray-100 flex flex-col items-center justify-center p-6 font-sans relative overflow-hidden">
-        
+
         {/* Top Right: Money Display */}
         <div className="fixed top-6 right-6 z-30 animate-fade-in">
           <div className="bg-[#16161a] border border-[#2a2a32] rounded-2xl px-5 py-3 flex items-center gap-4 shadow-2xl">
@@ -161,16 +173,16 @@ export default function App() {
         </div>
 
         {/* Left: Collapsible Sidebar */}
-        <div 
+        <div
           className={`fixed left-0 top-0 bottom-0 z-40 bg-[#16161a] border-r border-[#2a2a32] transition-all duration-300 ease-in-out flex flex-col shadow-2xl ${sidebarOpen ? 'w-64' : 'w-16'}`}
         >
           <div className="h-20 flex items-center justify-between px-4 border-b border-[#2a2a32]">
             {sidebarOpen && <span className="text-xs font-black text-indigo-400 tracking-widest uppercase animate-fade-in">Menu</span>}
-            <button 
+            <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="w-8 h-8 rounded-lg hover:bg-white/5 flex items-center justify-center text-gray-400 transition-colors mx-auto"
             >
-              <svg className={`w-5 h-5 transition-transform duration-500 ${sidebarOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6"/></svg>
+              <svg className={`w-5 h-5 transition-transform duration-500 ${sidebarOpen ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
             </button>
           </div>
 
@@ -178,7 +190,7 @@ export default function App() {
             {/* Horse Naming Button */}
             <div className={`px-4 flex flex-col gap-3 ${!sidebarOpen && 'items-center'}`}>
               <div className={`flex items-center gap-3 text-gray-500 ${!sidebarOpen && 'justify-center'}`}>
-                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M12 7v5l3 3"/></svg>
+                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" /><path d="M12 7v5l3 3" /></svg>
                 {sidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest animate-fade-in">Management</span>}
               </div>
 
@@ -190,7 +202,7 @@ export default function App() {
                 className={`flex items-center gap-3 p-3 rounded-xl transition-all ${showHorseNaming ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 text-gray-400 hover:bg-white/10'} ${!sidebarOpen && 'justify-center w-10 h-10 p-0'}`}
               >
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/>
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="16" y1="11" x2="22" y2="11" />
                 </svg>
                 {sidebarOpen && <span className="text-xs font-black uppercase tracking-tighter">名付け馬作成</span>}
               </button>
@@ -215,12 +227,25 @@ export default function App() {
                 </svg>
                 {sidebarOpen && <span className="text-xs font-black uppercase tracking-tighter">馬プール再抽選</span>}
               </button>
+
+              <button
+                onClick={() => {
+                  setShowHistory(!showHistory);
+                  if (!sidebarOpen) setSidebarOpen(true);
+                }}
+                className={`flex items-center gap-3 p-3 rounded-xl transition-all ${showHistory ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 text-gray-400 hover:bg-white/10'} ${!sidebarOpen && 'justify-center w-10 h-10 p-0'}`}
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+                </svg>
+                {sidebarOpen && <span className="text-xs font-black uppercase tracking-tighter">レース履歴</span>}
+              </button>
             </div>
 
             {/* Debt Button */}
             <div className={`px-4 flex flex-col gap-3 ${!sidebarOpen && 'items-center'}`}>
               <div className={`flex items-center gap-3 text-gray-500 ${!sidebarOpen && 'justify-center'}`}>
-                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                 {sidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest animate-fade-in">Finance</span>}
               </div>
 
@@ -234,7 +259,7 @@ export default function App() {
                 className={`flex items-center gap-3 p-3 rounded-xl transition-all ${debtAmount > 0 ? 'bg-red-600/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-gray-400 hover:bg-white/10'} ${!sidebarOpen && 'justify-center w-10 h-10 p-0'}`}
               >
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                  <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  <path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 {sidebarOpen && (
                   <div className="flex flex-col items-start leading-none">
@@ -273,10 +298,10 @@ export default function App() {
             {/* Secret Code Section (Moved to bottom) */}
             <div className={`flex flex-col gap-3 ${!sidebarOpen && 'items-center'}`}>
               <div className={`flex items-center gap-3 text-gray-500 ${!sidebarOpen && 'justify-center'}`}>
-                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M12 7v5l3 3"/></svg>
+                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" /><path d="M12 7v5l3 3" /></svg>
                 {sidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest animate-fade-in">Secret Code</span>}
               </div>
-              
+
               {sidebarOpen ? (
                 <div className="flex flex-col gap-2 animate-fade-in">
                   <input
@@ -295,26 +320,26 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <button 
+                <button
                   onClick={() => setSidebarOpen(true)}
                   className="w-8 h-8 rounded-lg bg-indigo-600/10 text-indigo-400 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-inner"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L22 22"/></svg>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L22 22" /></svg>
                 </button>
               )}
             </div>
           </div>
 
           <div className="p-4 border-t border-[#2a2a32] flex items-center gap-3">
-             <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 text-xs font-black border border-indigo-500/20 shrink-0">
-               {playerName.charAt(0).toUpperCase()}
-             </div>
-             {sidebarOpen && (
-               <div className="flex flex-col min-w-0 animate-fade-in">
-                 <span className="text-[10px] font-black text-white truncate">{playerName}</span>
-                 <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest truncate">{displayTitle}</span>
-               </div>
-             )}
+            <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 text-xs font-black border border-indigo-500/20 shrink-0">
+              {playerName.charAt(0).toUpperCase()}
+            </div>
+            {sidebarOpen && (
+              <div className="flex flex-col min-w-0 animate-fade-in">
+                <span className="text-[10px] font-black text-white truncate">{playerName}</span>
+                <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest truncate">{displayTitle}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -440,6 +465,19 @@ export default function App() {
               <ul className="space-y-6 text-xs text-gray-400 max-h-80 overflow-y-auto custom-scrollbar pr-2 pb-2">
                 {[
                   {
+                    version: 'v2.2.0',
+                    date: 'May 10, 2026',
+                    content: '同期システムの抜本的改善とUI強化',
+                    details: [
+                      'マルチプレイの完全同期化（絶対時刻ベースのレース開始制御等）',
+                      'シミュレーションに「暴れ馬」機能など予測不能な展開を追加',
+                      'ホストのレース設定に「コース特性（平坦/坂あり/直線長/コーナー多）」を追加',
+                      '単勝以外もオッズに影響するように計算アルゴリズムを改善',
+                      '収支推移グラフを日単位で集計し、見やすい右揃えバーグラフで表示可能に',
+                      '連勝バッジ（🔥NW）やチャットの安定性など多数のUI/UXとバグ修正',
+                    ]
+                  },
+                  {
                     version: 'v2.1.1',
                     date: 'May 9, 2026',
                     content: '対戦UXと臨場感の大幅強化',
@@ -547,6 +585,71 @@ export default function App() {
         {/* Horse Naming Modal */}
         {showHorseNaming && (
           <HorseNamingModal onClose={() => setShowHorseNaming(false)} />
+        )}
+
+        {/* Race History Overlay */}
+        {showHistory && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fade-in">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowHistory(false)} />
+            <div className="relative w-full max-w-2xl bg-[#16161a] border border-[#2a2a32] rounded-[32px] shadow-2xl flex flex-col max-h-[80vh] overflow-hidden animate-pop-in">
+              <div className="flex-1 overflow-y-auto p-6 bg-[#0c0c0e]">
+                <pre className="font-mono text-[11px] leading-relaxed text-gray-300 whitespace-pre-wrap">
+                  {(() => {
+                    if (historyItems.length === 0) return "データがありません";
+
+                    const lines: string[] = [];
+
+                    lines.push("📊 収支推移グラフ");
+                    lines.push("─".repeat(40));
+
+                    // 日単位で集計する
+                    const dailyMap = new Map<string, number>();
+                    const dailyList: { date_str: string, net: number }[] = [];
+
+                    // historyItemsは新しい順なので、古い順(chronological)に直す
+                    const items = [...historyItems].reverse();
+
+                    for (const stat of items) {
+                      const d = new Date(stat.date);
+                      const date_str = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
+                      const net = stat.payout - stat.bet_amount;
+
+                      if (dailyMap.has(date_str)) {
+                        dailyMap.set(date_str, dailyMap.get(date_str)! + net);
+                      } else {
+                        dailyMap.set(date_str, net);
+                        dailyList.push({ date_str, net: 0 }); // placeholder
+                      }
+                    }
+
+                    for (const d of dailyList) {
+                      d.net = dailyMap.get(d.date_str)!;
+                    }
+
+                    // 最新14日分を表示
+                    const displayDays = dailyList.slice(-14);
+                    const max_val = Math.max(Math.max(...displayDays.map(d => Math.abs(d.net))), 1);
+
+                    for (const d of displayDays) {
+                      const bar_length = Math.floor((Math.abs(d.net) / max_val) * 20);
+                      const sign = d.net >= 0 ? '+' : '-';
+                      const barChar = d.net >= 0 ? '█' : '░';
+                      const bar = barChar.repeat(bar_length).padStart(20, ' ');
+                      const numStr = Math.abs(d.net).toLocaleString().padStart(6, ' ');
+
+                      lines.push(`${d.date_str} |${bar} ${sign}${numStr}`);
+                    }
+
+                    return lines.join('\n');
+                  })()}
+                </pre>
+              </div>
+
+              <div className="p-6 bg-[#0c0c0e]/50 border-t border-[#2a2a32] text-center">
+                <p className="text-[9px] text-gray-600 font-black uppercase tracking-[0.2em]">Showing up to last 14 days (100 races)</p>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
