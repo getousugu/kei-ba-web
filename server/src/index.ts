@@ -4,7 +4,8 @@ import jockeyNamesData from '../../src/data/jockey_names.json';
 
 const ACTIVE_PLAYER_TTL_MS = 90_000;
 const RACE_INTERVAL_MS = 5 * 60_000;
-const BETTING_TIME_MS = 120_000;
+// 中央競馬場は常に次回レースを発売する。1枠前の発走と同時に次枠を開く。
+const BETTING_TIME_MS = RACE_INTERVAL_MS;
 const INITIAL_POOL_SIZE = 800;
 const MAX_POOL_SIZE = 1_000;
 const SEED_BATCH_SIZE = 100;
