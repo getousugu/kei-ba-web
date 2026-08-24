@@ -395,8 +395,11 @@ export class CentralRacecourse extends DurableObject<Env> {
   }
 
   private async scheduleMaintenance(): Promise<void> {
-    const delay = this.horseCount() < INITIAL_POOL_SIZE ? 5_000 : 60_000;
-    await this.ctx.storage.setAlarm(Date.now() + delay);
+    const now = Date.now();
+    const scheduledAt = this.horseCount() < INITIAL_POOL_SIZE
+      ? now + 5_000
+      : nextRaceStart(now) + 1_000;
+    await this.ctx.storage.setAlarm(scheduledAt);
   }
 
   async alarm(): Promise<void> {
