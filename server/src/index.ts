@@ -343,8 +343,12 @@ export class CentralRacecourse extends DurableObject<Env> {
   }
 
   private horseCount(): number {
+    const cached = this.stateNumber('horse_count', -1);
+    if (cached >= 0) return cached;
     const rows = this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM horses').toArray();
-    return Number(rows[0]?.count || 0);
+    const count = Number(rows[0]?.count || 0);
+    this.setStateNumber('horse_count', count);
+    return count;
   }
 
   private stateNumber(key: string, fallback: number): number {
@@ -366,31 +370,26 @@ export class CentralRacecourse extends DurableObject<Env> {
 
   private seedHorseBatch(batchSize: number): number {
     const before = this.horseCount();
+    if (before >= INITIAL_POOL_SIZE || batchSize <= 0) return before;
     const target = Math.min(INITIAL_POOL_SIZE, before + batchSize);
-    const existingNames = new Set(
-      [
-        ...this.ctx.storage.sql.exec<{ name: string }>('SELECT name FROM horses').toArray(),
-        ...this.ctx.storage.sql.exec<{ name: string }>('SELECT name FROM retired_horses').toArray()
-      ].map((row) => row.name)
-    );
     let activeCount = before;
-    let sourceIndex = this.stateNumber('next_horse_index', 0);
+    // 既存800頭は生成番号0..799。移行直後も過去の番号を再利用しない。
+    let sourceIndex = Math.max(this.stateNumber('next_horse_index', 0), before);
 
     while (activeCount < target && sourceIndex < MAX_POOL_SIZE * 100) {
       const horse = generateHorse(sourceIndex);
       sourceIndex += 1;
-      if (existingNames.has(horse.name)) continue;
-      this.ctx.storage.sql.exec(
+      const inserted = this.ctx.storage.sql.exec(
         `INSERT OR IGNORE INTO horses
           (name, data, central_earnings, total_races, wins, is_named_horse)
          VALUES (?, ?, 0, 0, 0, 0)`,
         horse.name,
         JSON.stringify(horse)
       );
-      existingNames.add(horse.name);
-      activeCount += 1;
+      if (inserted.rowsWritten > 0) activeCount += 1;
     }
     this.setStateNumber('next_horse_index', sourceIndex);
+    this.setStateNumber('horse_count', activeCount);
     return this.horseCount();
   }
 
@@ -723,6 +722,7 @@ export class CentralRacecourse extends DurableObject<Env> {
     });
 
     if (retiredCount > 0) {
+      this.setStateNumber('horse_count', Math.max(0, this.horseCount() - retiredCount));
       this.seedHorseBatch(Math.min(retiredCount, INITIAL_POOL_SIZE - this.horseCount()));
     }
   }
