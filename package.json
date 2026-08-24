@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "wrangler dev",
     "build": "tsc -b && vite build",
+    "build:server": "wrangler deploy --dry-run",
+    "typecheck:server": "tsc -p server/tsconfig.json",
+    "deploy:server": "wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -20,6 +24,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260823.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
@@ -34,6 +39,7 @@
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "wrangler": "^4.125.0"
   }
 }

@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "kei-ba-central",
+  "main": "server/src/index.ts",
+  "compatibility_date": "2026-08-24",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CENTRAL_RACECOURSE",
+        "class_name": "CentralRacecourse"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CentralRacecourse"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

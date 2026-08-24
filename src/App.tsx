@@ -7,6 +7,7 @@ import BettingPhase from './components/BettingPhase';
 import RacePhase from './components/RacePhase';
 import ResultPhase from './components/ResultPhase';
 import HorseNamingModal from './components/HorseNamingModal';
+import { fetchCentralStatus, type CentralStatus } from './network/centralServer';
 
 import { TITLES } from './core/constants';
 
@@ -25,6 +26,8 @@ export default function App() {
   const [showHorseNaming, setShowHorseNaming] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showCentralRacecourse, setShowCentralRacecourse] = useState(false);
+  const [centralStatus, setCentralStatus] = useState<CentralStatus | null>(null);
+  const [centralStatusError, setCentralStatusError] = useState(false);
   const [historyItems, setHistoryItems] = useState<any[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -53,6 +56,30 @@ export default function App() {
       });
     }
   }, [showHistory]);
+
+  useEffect(() => {
+    if (!showCentralRacecourse) return;
+    const controller = new AbortController();
+
+    const refresh = async () => {
+      try {
+        const status = await fetchCentralStatus(controller.signal);
+        setCentralStatus(status);
+        setCentralStatusError(false);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.warn('[Central Racecourse] status unavailable', error);
+        setCentralStatusError(true);
+      }
+    };
+
+    refresh();
+    const timer = window.setInterval(refresh, 10_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [showCentralRacecourse]);
 
   useEffect(() => {
     if (debtAmount > 0 && debtTimestamp) {
@@ -656,7 +683,9 @@ export default function App() {
                     <h2 className="mt-1 text-2xl font-black tracking-tight text-white">中央競馬場</h2>
                     <p className="mt-2 text-xs font-bold leading-relaxed text-gray-400">常時開催される、サーバー管理の公式レースです。</p>
                   </div>
-                  <span className="shrink-0 rounded-full border border-gray-700 bg-black/30 px-3 py-1 text-[9px] font-black tracking-widest text-gray-500">接続準備中</span>
+                  <span className={`shrink-0 rounded-full border px-3 py-1 text-[9px] font-black tracking-widest ${centralStatus && !centralStatusError ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-gray-700 bg-black/30 text-gray-500'}`}>
+                    {centralStatus && !centralStatusError ? 'サーバー接続中' : centralStatusError ? 'サーバー停止中' : '接続確認中'}
+                  </span>
                 </div>
               </div>
 
@@ -688,16 +717,43 @@ export default function App() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between rounded-xl border border-emerald-400/10 bg-emerald-500/5 px-4 py-3">
-                  <span className="text-[10px] font-bold text-gray-400">上部に参加者数・WIN5参加人数を常時表示</span>
-                  <span className="text-[9px] font-black text-emerald-400/70">WIN5 常時開催</span>
+                  <div>
+                    <div className="text-[9px] font-black tracking-widest text-gray-600">現在の中央競馬場</div>
+                    <div className="mt-1 text-[11px] font-black text-gray-300">
+                      参加者 {centralStatus?.participants ?? '—'}人
+                      <span className="mx-2 text-gray-700">/</span>
+                      WIN5 {centralStatus?.win5Participants ?? '—'}人
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[9px] font-black text-emerald-400/70">WIN5 常時開催</div>
+                    <div className="mt-1 text-[9px] font-bold text-gray-600">
+                      馬プール {centralStatus ? `${centralStatus.horsePool.current}/${centralStatus.horsePool.target}` : '—'}
+                    </div>
+                  </div>
                 </div>
+
+                {centralStatus && (
+                  <div className="mt-3 flex items-center justify-between rounded-xl border border-amber-400/10 bg-amber-400/[0.03] px-4 py-3">
+                    <div>
+                      <div className="text-[9px] font-black tracking-widest text-gray-600">次回レース</div>
+                      <div className="mt-1 text-xs font-black text-amber-100">
+                        {centralStatus.nextRace.grade === 'GENERAL' ? '一般競走' : centralStatus.nextRace.grade}
+                        <span className="ml-2 text-[10px] text-gray-500">{centralStatus.nextRace.horseCount}頭</span>
+                      </div>
+                    </div>
+                    <div className="text-right font-mono text-xs font-black text-white">
+                      {new Date(centralStatus.nextRace.startAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 発走
+                    </div>
+                  </div>
+                )}
 
                 <button
                   type="button"
                   disabled
                   className="mt-5 w-full rounded-2xl border border-[#34343c] bg-[#202025] py-3.5 text-xs font-black tracking-[0.16em] text-gray-500 cursor-not-allowed"
                 >
-                  サーバー接続後に開場します
+                  {centralStatus && !centralStatusError ? '中央サーバー接続済み・入場画面準備中' : 'サーバー接続後に開場します'}
                 </button>
               </div>
             </div>
