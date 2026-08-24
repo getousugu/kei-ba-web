@@ -7,6 +7,7 @@ import BettingPhase from './components/BettingPhase';
 import RacePhase from './components/RacePhase';
 import ResultPhase from './components/ResultPhase';
 import HorseNamingModal from './components/HorseNamingModal';
+import CentralRacecoursePhase from './components/CentralRacecoursePhase';
 import { fetchCentralStatus, type CentralStatus } from './network/centralServer';
 
 import { TITLES } from './core/constants';
@@ -26,6 +27,7 @@ export default function App() {
   const [showHorseNaming, setShowHorseNaming] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showCentralRacecourse, setShowCentralRacecourse] = useState(false);
+  const [centralRacecourseActive, setCentralRacecourseActive] = useState(false);
   const [centralStatus, setCentralStatus] = useState<CentralStatus | null>(null);
   const [centralStatusError, setCentralStatusError] = useState(false);
   const [historyItems, setHistoryItems] = useState<any[]>([]);
@@ -542,6 +544,7 @@ export default function App() {
                       '開催設定に「レースの盛り上がりを追加する」を追加。OFF時は演出を無効化でき、ONでも着順・タイムには影響しません。',
                       'レース式を再調整し、脚質の直接補正を抑えながら、距離・ペース・消耗によって有利不利が動くよう改善。',
                       '写真判定、三連単、後方からの逆転などに対応する新実績を5種追加。',
+                      '中央競馬場のテスト運用を開始。定時開催、中央馬プール、中央残高、通常画面と共通の馬券購入、締切までの変更、未観戦時の自動精算に対応。',
                     ]
                   },
                   {
@@ -750,14 +753,25 @@ export default function App() {
 
                 <button
                   type="button"
-                  disabled
-                  className="mt-5 w-full rounded-2xl border border-[#34343c] bg-[#202025] py-3.5 text-xs font-black tracking-[0.16em] text-gray-500 cursor-not-allowed"
+                  disabled={!centralStatus || centralStatusError}
+                  onClick={() => {
+                    setShowCentralRacecourse(false);
+                    setCentralRacecourseActive(true);
+                  }}
+                  className="mt-5 w-full rounded-2xl border border-amber-300/30 bg-amber-400 py-3.5 text-xs font-black tracking-[0.16em] text-black transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:border-[#34343c] disabled:bg-[#202025] disabled:text-gray-500"
                 >
-                  {centralStatus && !centralStatusError ? '中央サーバー接続済み・入場画面準備中' : 'サーバー接続後に開場します'}
+                  {centralStatus && !centralStatusError ? '中央競馬場へ入場' : 'サーバー接続後に開場します'}
                 </button>
               </div>
             </div>
           </div>
+        )}
+
+        {centralRacecourseActive && (
+          <CentralRacecoursePhase
+            playerName={playerName}
+            onClose={() => setCentralRacecourseActive(false)}
+          />
         )}
 
         {/* Race History Overlay */}

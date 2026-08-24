@@ -12,14 +12,16 @@ Cloudflare Workers と SQLite-backed Durable Objects で動く中央競馬場の
 - G1では獲得賞金1以上の馬だけを候補にする
 - 接続中の参加者数とWIN5参加人数を90秒の生存確認で管理する
 - 次回レースの12頭を中央サーバーで固定する
+- 既存のレース式で結果をサーバー上で一度だけ確定する
+- 中央専用残高と馬券を保存し、締切までは追加・取消・買い直しを許可する
+- 画面を閉じていても発走後に自動精算し、未確認結果を次回接続時に返す
+- 確定結果に応じて各馬の中央獲得賞金と通算成績を更新する
 
 ## まだ行わないこと
 
-- レース結果のサーバー計算・確定
-- 馬券、残高、配当のサーバー決済
 - 名付け馬の本人確認と中央馬プールへの登録
 - クイックマッチ
-- 馬券のサーバー保存、レース後の自動決済、未受取配当の次回起動時受取
+- WIN5の対象レース管理、脱落、配当、キャリーオーバー
 
 これらは、中央サーバーの公開とプレイヤー識別方法を決めた後の段階で追加します。
 
@@ -53,6 +55,10 @@ npm run deploy:server
 - `GET /api/health`
 - `GET /api/central/status`
 - `GET /api/central/races/next`
+- `GET /api/central/races/:raceId`
+- `GET /api/central/me?playerId=...`
 - `POST /api/central/join`
 - `POST /api/central/heartbeat`
 - `POST /api/central/leave`
+- `POST /api/central/bets`
+- `POST /api/central/settlements/ack`
