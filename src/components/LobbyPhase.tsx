@@ -129,7 +129,7 @@ export default function LobbyPhase() {
       <header className="h-14 bg-[#16161a] border-b border-[#2a2a32] flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]" />
-          <h2 className="font-black text-white tracking-widest uppercase text-sm">Lobby <span className="text-indigo-400 text-[10px] ml-2">v2.3.0</span></h2>
+          <h2 className="font-black text-white tracking-widest uppercase text-sm">Lobby <span className="text-indigo-400 text-[10px] ml-2">v3.0.0</span></h2>
         </div>
         <div className="flex items-center gap-4">
           <button

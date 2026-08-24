@@ -160,7 +160,7 @@ export const useGameStore = create<GameState>((set) => ({
     participantLimit: 12,
     coinRule: 'global',
     npcEnabled: true,
-    bettingTime: 60,
+    bettingTime: 120,
     horseCount: 12,
     distance: 'random',
     fieldCondition: 'random',

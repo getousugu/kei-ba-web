@@ -465,7 +465,7 @@ export default function App() {
               <ul className="space-y-6 text-xs text-gray-400 max-h-80 overflow-y-auto custom-scrollbar pr-2 pb-2">
                 {[
                   {
-                    version: 'v2.3.0',
+                    version: 'v3.0.0',
                     date: 'Aug 24, 2026',
                     content: 'レース映像・写真判定・実況をまとめて刷新',
                     details: [

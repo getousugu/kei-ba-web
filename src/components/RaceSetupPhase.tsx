@@ -46,7 +46,7 @@ export default function RaceSetupPhase() {
     distance: roomSettings.distance || 'random',
     fieldCondition: roomSettings.fieldCondition || 'random',
     weather: roomSettings.weather || 'random',
-    bettingTime: roomSettings.bettingTime || 60,
+    bettingTime: roomSettings.bettingTime || 120,
     courseFeature: roomSettings.courseFeature || 'random',
     raceDrama: roomSettings.raceDrama !== false,
   });
