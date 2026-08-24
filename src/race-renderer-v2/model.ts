@@ -26,6 +26,7 @@ export interface MockFrame {
   photoFrameCount: number;
   officialOrderReady: boolean;
   officialOrder: number[];
+  trackCondition?: string;
 }
 
 export const MOCK_DURATION = 62;

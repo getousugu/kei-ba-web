@@ -3,101 +3,88 @@ import { useGameStore } from '../store/gameStore';
 import { peerManager } from '../network/peerManager';
 import { CommentaryGenerator } from '../core/commentary_generator';
 import { HORSE_COLORS } from '../core/constants';
+import { initialCamera, renderRaceFrame } from '../race-renderer-v2/renderer';
+import type { CameraMode, MockFrame, RenderHorse, RunnerStyle } from '../race-renderer-v2/model';
 
 const STAGE_DUR = 2500;  // Time per simulation stage (ms)
 const MAX_COUNTDOWN = 5; // カウントダウン上限 (= raceStartTime バッファと揃える)
 const GATE_OPEN_DUR = 750; // Keep race progress at zero until the gate transition is complete
 const GOAL_STAGE_DUR = 5000; // Extra time for the final stretch
-const TRACK_RX = 1400;
-const TRACK_RY = 800;
-const TRACK_WIDTH = 180;
+const FOCUS_COLORS = ['#ffd44a', '#38d9ff', '#ff62c7'];
 type PhotoPhase = 'none' | 'waiting' | 'review' | 'reveal' | 'complete';
+type FinishSnapshot = {
+  at: number;
+  horses: RenderHorse[];
+  camera: { x: number; y: number; zoom: number };
+};
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-function getTrackPos(progress: number, rx: number, ry: number) {
-  const angle = -(progress * 2 * Math.PI) + Math.PI / 2;
-  return { x: rx * Math.cos(angle), y: ry * Math.sin(angle), angle };
-}
-
-function getTrackColors(fieldCondition?: string) {
-  if (fieldCondition === '良') return { grass: '#1a3a1a', dirt: '#d2b48c' };
-  if (fieldCondition === '重') return { grass: '#152515', dirt: '#a68a62' };
-  if (fieldCondition === '不良') return { grass: '#1a1d15', dirt: '#8b7355' };
-  return { grass: '#1a2e1a', dirt: '#c1a173' };
-}
-
-function drawTrackSurface(ctx: CanvasRenderingContext2D, grassColor: string, dirtColor: string) {
-  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX + TRACK_WIDTH, TRACK_RY + TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.fillStyle = grassColor; ctx.fill();
-  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX + TRACK_WIDTH, TRACK_RY + TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.ellipse(0, 0, TRACK_RX - TRACK_WIDTH, TRACK_RY - TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.fillStyle = dirtColor; ctx.fill('evenodd');
-  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX - TRACK_WIDTH, TRACK_RY - TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.fillStyle = grassColor; ctx.fill();
-  ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX + TRACK_WIDTH, TRACK_RY + TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX - TRACK_WIDTH, TRACK_RY - TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(-100, TRACK_RY); ctx.lineTo(100, TRACK_RY); ctx.stroke();
-}
-
-function drawStartingGateScene(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  horses: any[],
-  fieldCondition: string | undefined,
-  openProgress: number,
-) {
-  const { grass, dirt } = getTrackColors(fieldCondition);
-  ctx.fillStyle = '#0f140f';
-  ctx.fillRect(0, 0, width, height);
-  ctx.save();
-  ctx.translate(width / 2, height / 2);
-  ctx.scale(1.1, 1.1);
-  ctx.translate(0, -TRACK_RY);
-  drawTrackSurface(ctx, grass, dirt);
-
-  horses.forEach((horse, index) => {
-    const laneOffset = (index / Math.max(1, horses.length - 1) - 0.5) * TRACK_WIDTH * 1.7;
-    const gateY = TRACK_RY + laneOffset;
-    const horseX = -72 * (1 - openProgress);
-    const color = HORSE_COLORS[horse.horse_number - 1] || '#888';
-
-    ctx.strokeStyle = '#c9d0cc';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(-112, gateY - 13, 112, 26);
-    ctx.fillStyle = 'rgba(57, 68, 63, 0.72)';
-    ctx.fillRect(-112, gateY - 13, 112, 26);
-
-    // Front doors open away from the horse while it moves to the shared start position.
-    ctx.save();
-    ctx.translate(0, gateY);
-    ctx.rotate(-openProgress * Math.PI / 2);
-    ctx.strokeStyle = '#dce2df';
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -13); ctx.stroke();
-    ctx.restore();
-    ctx.save();
-    ctx.translate(0, gateY);
-    ctx.rotate(openProgress * Math.PI / 2);
-    ctx.strokeStyle = '#dce2df';
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 13); ctx.stroke();
-    ctx.restore();
-
-    ctx.beginPath();
-    ctx.arc(horseX, gateY, 14, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(horse.horse_number), horseX, gateY);
+function toRenderHorses(
+  raceHorses: { hn: number; name: string; progress: number }[],
+  roster: any[],
+): RenderHorse[] {
+  return raceHorses.map((horse, rank) => {
+    const rosterIndex = Math.max(0, roster.findIndex(item => item.horse_number === horse.hn));
+    const gateLane = rosterIndex - (roster.length - 1) / 2;
+    const runningLane = (((horse.hn * 37) % 11) - 5) * 0.36;
+    const launchBlend = Math.max(0, Math.min(1, horse.progress / 0.08));
+    const smoothLaunch = launchBlend * launchBlend * (3 - 2 * launchBlend);
+    const laneDrift = Math.sin(horse.progress * Math.PI * 4 + horse.hn * 0.91) * 0.12 * Math.min(1, horse.progress / 0.2);
+    return {
+      number: horse.hn,
+      name: horse.name,
+      color: HORSE_COLORS[horse.hn - 1] || '#888',
+      progress: horse.progress,
+      lane: lerp(gateLane, runningLane, smoothLaunch) + laneDrift,
+      rank: rank + 1,
+      energy: Math.max(0.05, 1 - Math.min(1, horse.progress) * 0.65),
+    };
   });
-  ctx.restore();
+}
+
+function createRaceRenderFrame({
+  time,
+  phase,
+  renderHorses,
+  gateOpen,
+  pace,
+  distance,
+  trackCondition,
+  officialOrder,
+  photoFrame,
+  photoFrameCount,
+}: {
+  time: number;
+  phase: MockFrame['phase'];
+  renderHorses: RenderHorse[];
+  gateOpen: number;
+  pace: string;
+  distance: number;
+  trackCondition?: string;
+  officialOrder: number[];
+  photoFrame: number;
+  photoFrameCount: number;
+}): MockFrame {
+  const leader = [...renderHorses].sort((a, b) => a.rank - b.rank)[0];
+  return {
+    time,
+    displayTime: time,
+    phase,
+    phaseLabel: phase === 'gate' ? '発走準備' : phase === 'opening' ? 'スタート' : phase === 'final' ? '最後の直線' : phase.startsWith('photo_') ? '写真判定' : 'レース中',
+    commentary: '',
+    gateOpen,
+    horses: renderHorses,
+    remaining: Math.max(0, Math.round(distance * (1 - Math.min(1, leader?.progress || 0)))),
+    pace,
+    photoFrame,
+    photoFrameCount,
+    officialOrderReady: phase !== 'photo_wait',
+    officialOrder,
+    trackCondition,
+  };
 }
 
 export default function RacePhase() {
@@ -114,6 +101,9 @@ export default function RacePhase() {
   const [gateOpening, setGateOpening] = useState(false);
   const [photoPhase, setPhotoPhase] = useState<PhotoPhase>('none');
   const [photoFrame, setPhotoFrame] = useState(0);
+  const [runnerStyle, setRunnerStyle] = useState<RunnerStyle>(() => window.localStorage.getItem('race-renderer-style') === 'marker' ? 'marker' : 'horse');
+  const [cameraMode, setCameraMode] = useState<CameraMode>('auto');
+  const [selectedHorses, setSelectedHorses] = useState<number[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const rafRef = useRef<number | null>(null);
@@ -137,19 +127,28 @@ export default function RacePhase() {
   const isStartedRef = useRef(false);
   const isFinishedRef = useRef(false);
   const photoPhaseRef = useRef<PhotoPhase>('none');
+  const photoFrameRef = useRef(0);
   const gateOpenTriggeredRef = useRef(false);
-  const lastFrameTimeRef = useRef<number | null>(null);
+  const runnerStyleRef = useRef<RunnerStyle>(runnerStyle);
+  const cameraModeRef = useRef<CameraMode>(cameraMode);
+  const selectedHorsesRef = useRef<number[]>(selectedHorses);
+  const finishFrameBufferRef = useRef<FinishSnapshot[]>([]);
+  const photoReviewFramesRef = useRef<FinishSnapshot[]>([]);
+  const winnerCrossedAtRef = useRef<number | null>(null);
+  const finishFramesLockedRef = useRef(false);
   // raceStartTime はストアから直接読む。ローカル fallback は使わない（ズレの原因になる）
 
   const horsesRef = useRef(horses);
   const simRef = useRef(raceData?.simulation);
-  // The race begins at the bottom of the oval (0, 800), moving to the right.
-  // Start the camera there so the gate view and first race frame connect cleanly.
-  const cameraRef = useRef({ x: 0, y: 800, zoom: 1.1 });
+  const cameraRef = useRef(initialCamera());
 
   useEffect(() => { horsesRef.current = horses; }, [horses]);
   useEffect(() => { simRef.current = raceData?.simulation; }, [raceData?.simulation]);
   useEffect(() => { photoPhaseRef.current = photoPhase; }, [photoPhase]);
+  useEffect(() => { photoFrameRef.current = photoFrame; }, [photoFrame]);
+  useEffect(() => { runnerStyleRef.current = runnerStyle; window.localStorage.setItem('race-renderer-style', runnerStyle); }, [runnerStyle]);
+  useEffect(() => { cameraModeRef.current = cameraMode; }, [cameraMode]);
+  useEffect(() => { selectedHorsesRef.current = selectedHorses; }, [selectedHorses]);
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commentary]);
 
   // ペースをシミュレーションデータから即座にセット（ステージ遷移待ちにしない）
@@ -176,6 +175,13 @@ export default function RacePhase() {
     useGameStore.getState().setPhase('result');
   }, []);
 
+  const toggleSelectedHorse = useCallback((horseNumber: number) => {
+    setSelectedHorses(current => {
+      if (current.includes(horseNumber)) return current.filter(number => number !== horseNumber);
+      return current.length < 3 ? [...current, horseNumber] : [...current.slice(1), horseNumber];
+    });
+  }, []);
+
   const startPhotoReview = useCallback(() => {
     const sim = simRef.current;
     const plan = sim?.presentation?.photoFinish;
@@ -183,6 +189,7 @@ export default function RacePhase() {
 
     photoPhaseRef.current = 'review';
     setPhotoPhase('review');
+    photoFrameRef.current = 0;
     setPhotoFrame(0);
     setTelop('全馬入線。1着・2着は写真判定です');
     addLog('📷 全馬入線。写真判定を開始します', 'photo');
@@ -190,7 +197,10 @@ export default function RacePhase() {
     const frameCount = plan.frameCount || 7;
     const frameDelay = 320;
     for (let frame = 1; frame < frameCount; frame++) {
-      photoTimersRef.current.push(setTimeout(() => setPhotoFrame(frame), 1000 + frame * frameDelay));
+      photoTimersRef.current.push(setTimeout(() => {
+        photoFrameRef.current = frame;
+        setPhotoFrame(frame);
+      }, 1000 + frame * frameDelay));
     }
 
     const revealAt = 1000 + frameCount * frameDelay + 650;
@@ -198,6 +208,8 @@ export default function RacePhase() {
       const winner = sim.results?.[0];
       photoPhaseRef.current = 'reveal';
       setPhotoPhase('reveal');
+      photoFrameRef.current = frameCount - 1;
+      setPhotoFrame(frameCount - 1);
       setTelop(`こっちだ！ ${winner?.horse_number}番 ${winner?.horse_name}！`);
       addLog(`🏆 写真判定の結果、${winner?.horse_number}番 ${winner?.horse_name} が1着！`, 'finish');
     }, revealAt));
@@ -207,6 +219,7 @@ export default function RacePhase() {
       setPhotoPhase('complete');
       isFinishedRef.current = true;
       setIsFinished(true);
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       if (useGameStore.getState().role === 'host') {
         nextTimerRef.current = setTimeout(handleNext, 1400);
       }
@@ -245,7 +258,23 @@ export default function RacePhase() {
         addLog('🏁 まもなく発走します');
       }
 
-      drawStartingGateScene(ctx, W, H, horsesRef.current, raceData?.field_condition, 0);
+      const gateHorses = toRenderHorses(
+        horsesRef.current.map(horse => ({ hn: horse.horse_number, name: horse.name, progress: 0 })),
+        horsesRef.current,
+      );
+      const gateFrame = createRaceRenderFrame({
+        time: elapsed / 1000,
+        phase: 'gate',
+        renderHorses: gateHorses,
+        gateOpen: 0,
+        pace: sim.pace || '',
+        distance: raceData?.distance || 1000,
+        trackCondition: raceData?.field_condition,
+        officialOrder: sim.results?.map((result: any) => result.horse_number) || [],
+        photoFrame: 0,
+        photoFrameCount: sim.presentation?.photoFinish?.frameCount || 7,
+      });
+      renderRaceFrame(ctx, W, H, gateFrame, cameraModeRef.current, cameraRef.current, selectedHorsesRef.current, runnerStyleRef.current, time);
       rafRef.current = requestAnimationFrame(loop);
       return;
     } else {
@@ -262,14 +291,23 @@ export default function RacePhase() {
     }
 
     if (elapsed < GATE_OPEN_DUR) {
-      drawStartingGateScene(
-        ctx,
-        W,
-        H,
+      const gateHorses = toRenderHorses(
+        horsesRef.current.map(horse => ({ hn: horse.horse_number, name: horse.name, progress: 0 })),
         horsesRef.current,
-        raceData?.field_condition,
-        Math.min(1, elapsed / GATE_OPEN_DUR),
       );
+      const openingFrame = createRaceRenderFrame({
+        time: elapsed / 1000,
+        phase: 'opening',
+        renderHorses: gateHorses,
+        gateOpen: Math.min(1, elapsed / GATE_OPEN_DUR),
+        pace: sim.pace || '',
+        distance: raceData?.distance || 1000,
+        trackCondition: raceData?.field_condition,
+        officialOrder: sim.results?.map((result: any) => result.horse_number) || [],
+        photoFrame: 0,
+        photoFrameCount: sim.presentation?.photoFinish?.frameCount || 7,
+      });
+      renderRaceFrame(ctx, W, H, openingFrame, cameraModeRef.current, cameraRef.current, selectedHorsesRef.current, runnerStyleRef.current, time);
       rafRef.current = requestAnimationFrame(loop);
       return;
     }
@@ -294,9 +332,6 @@ export default function RacePhase() {
     // The first frame of the race must be the same position shown in the gate.
     // Do not let the hidden simulation advance while the doors are opening.
     const raceElapsed = Math.max(0, elapsed - GATE_OPEN_DUR);
-    const totalDur = (sim.stages.length - 1) * STAGE_DUR + GOAL_STAGE_DUR;
-    const done = raceElapsed >= totalDur;
-
     const isGoalStage = raceElapsed >= (sim.stages.length - 1) * STAGE_DUR;
     const stageIdx = isGoalStage ? sim.stages.length - 1 : Math.floor(raceElapsed / STAGE_DUR);
 
@@ -362,6 +397,7 @@ export default function RacePhase() {
     // Detect Winner Crossing
     if (!winnerCrossedRef.current && horsesInRace.some(h => h.progress >= 1.0)) {
       winnerCrossedRef.current = true;
+      winnerCrossedAtRef.current = now;
       const officialWinner = sim.results?.[0];
       const winner = horsesInRace.find(h => h.hn === officialWinner?.horse_number)
         ?? [...horsesInRace].sort((a, b) => b.progress - a.progress)[0];
@@ -572,87 +608,68 @@ export default function RacePhase() {
       if (p >= 0.95) trigger('m95', 'WHIP');
     }
 
-    const hPositions: any[] = [];
-    const startSpread = 0.8 + 0.9 * (1 - Math.min(1, (sorted[0]?.progress ?? 0) / 0.04));
-    sorted.forEach((h, rank) => {
-      const pos = getTrackPos(h.progress, TRACK_RX, TRACK_RY);
-      const laneOffset = (rank / Math.max(1, horsesRef.current.length - 1) - 0.5) * TRACK_WIDTH * startSpread;
-      const nx = Math.cos(pos.angle), ny = Math.sin(pos.angle);
-      hPositions.push({ hn: h.hn, x: pos.x + nx * laneOffset, y: pos.y + ny * laneOffset, progress: h.progress, rank: rank + 1, name: h.name });
+    const liveRenderHorses = toRenderHorses(sorted, horsesRef.current);
+    const lastRecorded = finishFrameBufferRef.current.at(-1)?.at || 0;
+    if (!finishFramesLockedRef.current && (sorted[0]?.progress || 0) >= 0.94 && now - lastRecorded >= 55) {
+      finishFrameBufferRef.current.push({
+        at: now,
+        horses: liveRenderHorses.map(horse => ({ ...horse })),
+        camera: { ...cameraRef.current },
+      });
+      finishFrameBufferRef.current = finishFrameBufferRef.current.filter(snapshot => now - snapshot.at <= 1800);
+    }
+    if (winnerCrossedAtRef.current && now - winnerCrossedAtRef.current > 550) {
+      finishFramesLockedRef.current = true;
+    }
+
+    const reviewSnapshot = photoReviewFramesRef.current[Math.min(photoFrameRef.current, Math.max(0, photoReviewFramesRef.current.length - 1))];
+    const isReviewing = ['review', 'reveal', 'complete'].includes(photoPhaseRef.current) && !!reviewSnapshot;
+    if (isReviewing) Object.assign(cameraRef.current, reviewSnapshot.camera);
+    const renderHorses = isReviewing ? reviewSnapshot.horses : liveRenderHorses;
+    const renderPhase: MockFrame['phase'] = photoPhaseRef.current === 'waiting'
+      ? 'photo_wait'
+      : photoPhaseRef.current === 'review'
+        ? 'photo_review'
+        : ['reveal', 'complete'].includes(photoPhaseRef.current)
+          ? 'photo_result'
+          : (sorted[0]?.progress || 0) >= 0.82 ? 'final' : 'race';
+    const renderFrame = createRaceRenderFrame({
+      time: raceElapsed / 1000,
+      phase: renderPhase,
+      renderHorses,
+      gateOpen: 1,
+      pace: sim.pace || '',
+      distance: raceData?.distance || 1000,
+      trackCondition: raceData?.field_condition,
+      officialOrder: sim.results?.map((result: any) => result.horse_number) || [],
+      photoFrame: photoFrameRef.current,
+      photoFrameCount: sim.presentation?.photoFinish?.frameCount || 7,
     });
+    renderRaceFrame(ctx, W, H, renderFrame, cameraModeRef.current, cameraRef.current, selectedHorsesRef.current, runnerStyleRef.current, time);
 
-    const leaderProgress = sorted[0]?.progress ?? 0;
-    const focusCount = leaderProgress > 0.84 ? 3 : 5;
-    const topPack = hPositions.slice(0, Math.min(focusCount, hPositions.length));
-    const avgX = topPack.reduce((s, h) => s + h.x, 0) / topPack.length;
-    const avgY = topPack.reduce((s, h) => s + h.y, 0) / topPack.length;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    topPack.forEach(h => { minX = Math.min(minX, h.x); maxX = Math.max(maxX, h.x); minY = Math.min(minY, h.y); maxY = Math.max(maxY, h.y); });
-    const spread = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
-    const targetZoom = Math.min(1.2, Math.max(0.4, 1800 / (spread + 800)));
-
-    const dt = Math.min(0.05, Math.max(0.001, lastFrameTimeRef.current === null ? 1 / 60 : (time - lastFrameTimeRef.current) / 1000));
-    lastFrameTimeRef.current = time;
-    const positionAlpha = 1 - Math.exp(-5.0 * dt);
-    const zoomAlpha = 1 - Math.exp(-2.5 * dt);
-    cameraRef.current.x = lerp(cameraRef.current.x, avgX, positionAlpha);
-    cameraRef.current.y = lerp(cameraRef.current.y, avgY, positionAlpha);
-    cameraRef.current.zoom = lerp(cameraRef.current.zoom, targetZoom, zoomAlpha);
-
-    ctx.save();
-    const { grass: grassColor, dirt: dirtColor } = getTrackColors(raceData?.field_condition);
-
-    ctx.fillStyle = '#0f140f'; ctx.fillRect(0, 0, W, H);
-    ctx.translate(W / 2, H / 2);
-    ctx.scale(cameraRef.current.zoom, cameraRef.current.zoom);
-    ctx.translate(-cameraRef.current.x, -cameraRef.current.y);
-
-    drawTrackSurface(ctx, grassColor, dirtColor);
-
-    hPositions.forEach(hp => {
-      const color = HORSE_COLORS[hp.hn - 1] || '#888';
-      const isLeader = hp.rank === 1;
-      const bob = Math.sin(time * 0.02 + hp.hn) * 2;
-      if (!done) {
-        ctx.fillStyle = 'rgba(193, 161, 115, 0.4)';
-        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(hp.x + (Math.random() - 0.5) * 20, hp.y + 15 + (Math.random() - 0.5) * 10, Math.random() * 8, 0, Math.PI * 2); ctx.fill(); }
-      }
-      ctx.save();
-      ctx.translate(hp.x, hp.y + bob);
-
-      let drawProg = hp.progress;
-      if (drawProg > 1.0) {
-        const over = drawProg - 1.0;
-        drawProg = 1.0 + 0.03 * (1 - Math.exp(-over / 0.03));
-      }
-
-      const { angle } = getTrackPos(drawProg, TRACK_RX, TRACK_RY);
-      ctx.save(); ctx.rotate(angle - Math.PI / 2);
-      ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(-6, -10); ctx.lineTo(0, -18); ctx.lineTo(6, -10); ctx.fill();
-      ctx.restore();
-      if (isLeader) { ctx.shadowBlur = 20; ctx.shadowColor = color; }
-      ctx.beginPath(); ctx.arc(0, 0, isLeader ? 18 : 14, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.font = `bold ${isLeader ? 14 : 11}px monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(hp.hn), 0, 0);
-      if (isLeader || hp.rank <= 3) {
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 20px sans-serif';
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = '#000';
-        ctx.textAlign = 'center';
-        const nameText = hp.progress >= 1.0 ? `🚩 ${hp.name}` : hp.name;
-        ctx.fillText(nameText, 0, -35);
-      }
-      ctx.restore();
-    });
-
-    ctx.restore();
     const allFinished = horsesInRace.every(h => h.progress >= 0.999);
     if (allFinished && !doneRef.current) {
       doneRef.current = true;
 
       if (sim.presentation?.photoFinish?.enabled) {
-        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+        const frameCount = sim.presentation.photoFinish.frameCount || 7;
+        const center = winnerCrossedAtRef.current || now;
+        const buffer = finishFrameBufferRef.current;
+        const nearFinish = buffer.filter(snapshot => Math.abs(snapshot.at - center) <= 480);
+        const source = nearFinish.length >= 2 ? nearFinish : buffer;
+        if (source.length) {
+          photoReviewFramesRef.current = Array.from({ length: frameCount }, (_, index) => {
+            const sourceIndex = frameCount <= 1 ? source.length - 1 : Math.round(index * (source.length - 1) / (frameCount - 1));
+            const snapshot = source[Math.max(0, sourceIndex)];
+            return {
+              at: snapshot.at,
+              horses: snapshot.horses.map(horse => ({ ...horse })),
+              camera: { ...snapshot.camera },
+            };
+          });
+        }
         startPhotoReview();
+        rafRef.current = requestAnimationFrame(loop);
         return;
       }
 
@@ -712,9 +729,7 @@ export default function RacePhase() {
         return b.progress - a.progress;
       })
     : rankings;
-  const photoResults = (raceData?.simulation?.results || []).slice(0, 2);
   const photoFrameCount = photoPlan?.frameCount || 7;
-  const photoT = photoFrameCount <= 1 ? 1 : photoFrame / (photoFrameCount - 1);
 
   return (
     <div className="h-screen flex flex-col bg-[#0c100c] text-white overflow-hidden relative font-sans">
@@ -742,6 +757,23 @@ export default function RacePhase() {
         {/* Race Track */}
         <div className="flex-1 relative">
           <canvas ref={canvasRef} className="w-full h-full" />
+
+          <div className="absolute right-5 top-32 z-40 flex flex-col items-end gap-2">
+            <div className="flex rounded-xl border border-white/10 bg-black/65 p-1 shadow-xl backdrop-blur-md">
+              {([['horse', '馬'], ['marker', '丸']] as const).map(([style, label]) => (
+                <button key={style} onClick={() => setRunnerStyle(style)} className={`h-8 min-w-11 rounded-lg px-3 text-[11px] font-black transition ${runnerStyle === style ? 'bg-emerald-400 text-[#06130c]' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-xl border border-white/10 bg-black/65 p-1 shadow-xl backdrop-blur-md">
+              {([['auto', '自動'], ['broadcast', '中継'], ['leader', '先頭'], ['overview', '全体']] as const).map(([mode, label]) => (
+                <button key={mode} onClick={() => setCameraMode(mode)} className={`h-8 rounded-lg px-3 text-[11px] font-black transition ${cameraMode === mode ? 'bg-white text-black' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Commentary Telop */}
           {telop && (
@@ -772,31 +804,20 @@ export default function RacePhase() {
           )}
 
           {photoPlan?.enabled && ['waiting', 'review', 'reveal'].includes(photoPhase) && (
-            <div className="absolute inset-0 z-50 bg-[#111514]/90 flex items-center justify-center p-6">
-              <div className="w-full max-w-3xl">
-                <div className="text-center mb-5">
-                  <div className="text-[11px] tracking-[0.4em] text-gray-400 font-black">PHOTO FINISH</div>
-                  <div className="mt-2 text-2xl md:text-3xl text-white font-black">
-                    {photoPhase === 'waiting' ? '1着・2着 写真判定中' : photoPhase === 'review' ? `判定映像 ${photoFrame + 1}/${photoFrameCount}` : '判定結果'}
-                  </div>
+            <div className="absolute left-1/2 top-4 z-50 -translate-x-1/2 pointer-events-none">
+              <div className={`min-w-80 rounded-2xl border px-7 py-3 text-center shadow-2xl backdrop-blur-md ${photoPhase === 'reveal' ? 'border-yellow-300/70 bg-yellow-950/85' : 'border-amber-300/40 bg-black/80'}`}>
+                <div className="text-[10px] font-black tracking-[0.35em] text-amber-300">
+                  {photoPhase === 'reveal' ? 'OFFICIAL RESULT' : photoPhase === 'review' ? 'PHOTO FINISH' : 'PHOTO FINISH PENDING'}
                 </div>
-                <div className="relative h-56 bg-[#b39a73] border-y-4 border-white/30 overflow-hidden">
-                  <div className="absolute top-0 bottom-0 left-[68%] w-1 bg-white" />
-                  <div className="absolute top-2 bottom-2 left-[68%] border-l border-dashed border-black/50" />
-                  {photoResults.map((result: any, index: number) => {
-                    const gapPixels = Math.min(18, Math.max(3, Number(photoPlan.rawGapSeconds || 0.05) * 45));
-                    const finishX = 68 + (index === 0 ? 2 : 2 - gapPixels / 10);
-                    const x = 18 + (finishX - 18) * (photoPhase === 'waiting' ? 0.15 : photoT);
-                    return (
-                      <div key={result.horse_number} className="absolute flex items-center gap-3 transition-none" style={{ left: `${x}%`, top: index === 0 ? '28%' : '62%', transform: 'translate(-50%, -50%)' }}>
-                        <div className="w-10 h-10 rounded-full border-3 border-white flex items-center justify-center text-white font-black" style={{ background: HORSE_COLORS[result.horse_number - 1] || '#777' }}>{result.horse_number}</div>
-                        <div className="whitespace-nowrap bg-black/60 px-3 py-1 rounded text-xs text-white font-bold">{result.horse_name}</div>
-                      </div>
-                    );
-                  })}
+                <div className="mt-1 text-lg font-black text-white">
+                  {photoPhase === 'waiting'
+                    ? '1着・2着 写真判定待ち'
+                    : photoPhase === 'review'
+                      ? `写真判定中 ${photoFrame + 1}/${photoFrameCount}`
+                      : `こっちだ！ ${raceData.simulation.results?.[0]?.horse_number}番 ${raceData.simulation.results?.[0]?.horse_name}！`}
                 </div>
-                <div className="mt-5 text-center text-sm text-gray-300 font-bold">
-                  {photoPhase === 'waiting' ? '全馬の入線を待っています' : photoPhase === 'review' ? 'ゴール直前を一コマずつ確認しています' : `こっちだ！ ${photoResults[0]?.horse_number}番 ${photoResults[0]?.horse_name}！`}
+                <div className="mt-0.5 text-[11px] font-bold text-white/70">
+                  {photoPhase === 'waiting' ? '全頭の着順決定をお待ちください' : photoPhase === 'review' ? '実際のゴール時点を全馬込みで確認しています' : '着順が確定しました'}
                 </div>
               </div>
             </div>
@@ -813,16 +834,17 @@ export default function RacePhase() {
               const currentRank = i + 1;
               const isOvertaking = r.prevRank !== undefined && currentRank < r.prevRank;
               const isConfirmed = r.confirmed;
+              const selectedIndex = selectedHorses.indexOf(r.hn);
               return (
                 <div
                   key={r.hn}
                   className={`absolute left-0 right-0 px-4 transition-all duration-700 ease-[cubic-bezier(0.22,1.61,0.36,1)] ${isOvertaking ? 'z-10' : 'z-0'}`}
                   style={{ top: i * 44 + 12, height: 40 }}
                 >
-                  <div className={`flex items-center gap-3 h-full rounded-lg px-2 border transition-all duration-500 shadow-lg ${isConfirmed ? 'bg-yellow-900/50 border-yellow-500/60 shadow-[0_0_12px_rgba(234,179,8,0.3)]' :
+                  <button onClick={() => toggleSelectedHorse(r.hn)} className={`flex w-full items-center gap-3 h-full rounded-lg px-2 border text-left transition-all duration-500 shadow-lg ${selectedIndex >= 0 ? 'bg-white/10' : ''} ${isConfirmed ? 'bg-yellow-900/50 border-yellow-500/60 shadow-[0_0_12px_rgba(234,179,8,0.3)]' :
                     isOvertaking ? 'bg-indigo-500 border-white scale-[1.12] shadow-[0_0_30px_rgba(99,102,241,0.8)] brightness-125' :
                       'bg-black/60 border-white/10'
-                    }`}>
+                    }`} style={selectedIndex >= 0 ? { borderColor: FOCUS_COLORS[selectedIndex], boxShadow: `0 0 14px ${FOCUS_COLORS[selectedIndex]}55` } : undefined}>
                     <span className={`w-4 font-mono font-black text-xs text-center ${i < 3 ? 'text-yellow-400' : 'text-gray-300'}`}>{photoPending && contenderSet.has(r.hn) ? '?' : i + 1}</span>
                     <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black text-white shrink-0 shadow-xl border border-white/20" style={{ background: HORSE_COLORS[r.hn - 1], boxShadow: isOvertaking ? `0 0 20px ${HORSE_COLORS[r.hn - 1]}` : '' }}>{r.hn}</div>
                     <span className="flex-1 font-black text-xs truncate text-white drop-shadow-sm">{r.name}</span>
@@ -832,7 +854,7 @@ export default function RacePhase() {
                       ? <div className="text-[9px] font-mono text-yellow-400 font-black">確定</div>
                       : <div className="text-[9px] font-mono text-gray-200 font-bold">{(r.progress * 100).toFixed(0)}%</div>
                     }
-                  </div>
+                  </button>
                 </div>
               );
             })}
