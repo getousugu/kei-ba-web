@@ -40,6 +40,15 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
   const playedRaceIdsRef = useRef(new Set<string>());
   const loadedResultIdsRef = useRef(new Set<string>());
   const syncingRef = useRef(false);
+  const playbackRef = useRef<typeof playback>(null);
+  useEffect(() => { playbackRef.current = playback; }, [playback]);
+
+  const completePlayback = useCallback(() => {
+    const completed = playbackRef.current;
+    if (!completed) return;
+    setRecentResult(completed.race);
+    setPlayback(null);
+  }, []);
 
   const beginPlayback = useCallback((finished: CentralRace) => {
     if (playedRaceIdsRef.current.has(finished.id) || !finished.simulation) return;
@@ -182,7 +191,7 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
           simulation: playback.race.simulation,
         }}
         raceStartTime={playback.startsAt}
-        onComplete={() => { setRecentResult(playback.race); setPlayback(null); }}
+        onComplete={completePlayback}
       /></div>}
 
       {!playback && resultRace && <div className="fixed inset-0 z-[110]"><ResultPhase central={{

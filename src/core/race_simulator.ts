@@ -204,11 +204,17 @@ export class RaceSimulator {
     const frontCount  = simHorses.filter(h => ['逃げ','先行'].includes(h.running_style)).length;
     const avgWisdom   = simHorses.reduce((s, h) => s + h.wisdom, 0) / simHorses.length;
 
-    if (escapeCount >= 4 || (escapeCount >= 3 && frontCount >= 5)) return 'ハイペース';
-    if (escapeCount === 0 || frontCount <= 2)                       return 'スローペース';
-    return avgWisdom > 55
-      ? (Math.random() > 0.5 ? 'ミドルペース' : 'スローペース')
-      : (Math.random() > 0.4 ? 'ミドルペース' : 'ハイペース');
+    // 12頭立てでは逃げ馬が3頭前後になることが多い。3頭だけでほぼ常時
+    // ハイペースにすると展開が単調になるため、極端な先行集団だけを確定扱いにする。
+    if (escapeCount >= 5 || (escapeCount >= 4 && frontCount >= 7)) return 'ハイペース';
+    if (escapeCount === 0 || frontCount <= 2) return 'スローペース';
+
+    const roll = Math.random();
+    const highChance = Math.max(0.10, Math.min(0.38, 0.10 + Math.max(0, escapeCount - 2) * 0.12));
+    const slowChance = avgWisdom > 55 ? 0.24 : 0.16;
+    if (roll < highChance) return 'ハイペース';
+    if (roll < highChance + slowChance) return 'スローペース';
+    return 'ミドルペース';
   }
 
   // ─── 1ステップシミュレーション ──────────────────────────────────

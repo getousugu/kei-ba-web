@@ -146,6 +146,7 @@ export default function RacePhase(props: RacePhaseProps = {}) {
   const photoPhaseRef = useRef<PhotoPhase>('none');
   const photoFrameRef = useRef(0);
   const gateOpenTriggeredRef = useRef(false);
+  const gateCloseAppliedRef = useRef(false);
   const runnerStyleRef = useRef<RunnerStyle>(runnerStyle);
   const cameraModeRef = useRef<CameraMode>(cameraMode);
   const selectedHorsesRef = useRef<number[]>(selectedHorses);
@@ -153,6 +154,7 @@ export default function RacePhase(props: RacePhaseProps = {}) {
   const photoReviewFramesRef = useRef<FinishSnapshot[]>([]);
   const winnerCrossedAtRef = useRef<number | null>(null);
   const finishFramesLockedRef = useRef(false);
+  const finishApproachStartRef = useRef<Record<number, number>>({});
   // raceStartTime はストアから直接読む。ローカル fallback は使わない（ズレの原因になる）
 
   const horsesRef = useRef(horses);
@@ -318,6 +320,11 @@ export default function RacePhase(props: RacePhaseProps = {}) {
       rafRef.current = requestAnimationFrame(loopRef.current);
       return;
     }
+    // タイマーが再描画の境界で破棄されても、発走演出を残し続けない。
+    if (!gateCloseAppliedRef.current) {
+      gateCloseAppliedRef.current = true;
+      setGateOpening(false);
+    }
 
     // 120s Timeout
     if (elapsed >= 120000 && !doneRef.current) {
@@ -452,6 +459,30 @@ export default function RacePhase(props: RacePhaseProps = {}) {
 
       finishedHorsesRef.current.add(winner.hn);
       lastFinishTimeRef.current = Date.now();
+      horsesInRace.forEach(horse => {
+        finishApproachStartRef.current[horse.hn] = horse.progress;
+      });
+    }
+
+    // 最終ステージは「各馬の実タイム差」を位置差として保持しているため、
+    // 勝ち馬以外は1.0未満で止まる。確定順と着差を保った短い追走を加え、
+    // 全馬が決勝線を通過してから結果画面へ進めるようにする。
+    if (winnerCrossedAtRef.current !== null) {
+      const sinceWinner = now - winnerCrossedAtRef.current;
+      const winnerTime = Number(sim.results?.[0]?.finish_time || 0);
+      horsesInRace.forEach(horse => {
+        if (finishedHorsesRef.current.has(horse.hn)) return;
+        const resultIndex = sim.results?.findIndex((result: any) => result.horse_number === horse.hn) ?? -1;
+        if (resultIndex < 0) return;
+        const finishTime = Number(sim.results?.[resultIndex]?.finish_time || winnerTime);
+        const realGapSeconds = Math.max(0, finishTime - winnerTime);
+        const visualFinishAt = Math.min(7_000, Math.max(resultIndex * 170, realGapSeconds * 450));
+        const approachDuration = 650;
+        const approach = Math.max(0, Math.min(1, (sinceWinner - visualFinishAt + approachDuration) / approachDuration));
+        const eased = approach * approach * (3 - 2 * approach);
+        const startProgress = finishApproachStartRef.current[horse.hn] ?? horse.progress;
+        horse.progress = Math.max(horse.progress, startProgress + (1.0001 - startProgress) * eased);
+      });
     }
 
     // After 5 horses cross, gently boost remaining horses to approach their final sim progress
@@ -720,8 +751,9 @@ export default function RacePhase(props: RacePhaseProps = {}) {
     rafRef.current = requestAnimationFrame(loopRef.current);
   }, [addLog, centralPlayback, handleNext, lastWinnerHN, props.raceStartTime, raceData?.distance, raceData?.field_condition, sessionHorseWins, startPhotoReview]);
 
+  useEffect(() => { loopRef.current = loop; }, [loop]);
+
   useEffect(() => {
-    loopRef.current = loop;
     rafRef.current = requestAnimationFrame(loopRef.current);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -729,7 +761,7 @@ export default function RacePhase(props: RacePhaseProps = {}) {
       photoTimersRef.current.forEach(clearTimeout);
       photoTimersRef.current = [];
     };
-  }, [loop]);
+  }, []);
 
   useEffect(() => {
     const resize = () => {

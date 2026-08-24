@@ -56,7 +56,8 @@ export default function BettingPhase({ central }: { central?: CentralBettingAdap
   const roomSettings = central ? { ...roomRoomSettings, npcEnabled: false } : roomRoomSettings;
   const win5Data = central ? null : roomWin5Data;
   const sessionHorseWins = central ? {} : roomSessionHorseWins;
-  const currentTime = () => Date.now() + (central?.serverOffsetMs ?? 0);
+  const serverOffsetMs = central?.serverOffsetMs ?? 0;
+  const currentTime = useCallback(() => Date.now() + serverOffsetMs, [serverOffsetMs]);
 
   const [betType, setBetType] = useState(BET_TYPES[0]);
   const [buyMode, setBuyMode] = useState<'通常' | 'ボックス' | '流し'>('通常');
@@ -157,20 +158,22 @@ export default function BettingPhase({ central }: { central?: CentralBettingAdap
 
   useEffect(() => {
     if (!bettingEndTime) return;
-    
-    timerRef.current = setInterval(() => {
-      const remaining = Math.max(0, Math.floor((bettingEndTime - Date.now()) / 1000));
+
+    const updateTimer = () => {
+      const remaining = Math.max(0, Math.floor((bettingEndTime - currentTime()) / 1000));
       setTimeLeft(remaining);
       if (remaining <= 0) {
         if (timerRef.current) clearInterval(timerRef.current);
         if (useGameStore.getState().role === 'host') startRace();
       }
-    }, 1000);
+    };
+    updateTimer();
+    timerRef.current = setInterval(updateTimer, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [bettingEndTime, startRace]);
+  }, [bettingEndTime, currentTime, startRace]);
 
   const maxSel = ['単勝', '複勝', 'WIN5'].includes(betType) ? 1 : ['馬連', 'ワイド', '馬単'].includes(betType) ? 2 : 3;
 
