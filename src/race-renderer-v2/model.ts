@@ -1,5 +1,6 @@
 export type CameraMode = 'auto' | 'broadcast' | 'leader' | 'overview';
 export type MockScene = 'gate' | 'race' | 'final' | 'photo';
+export type RunnerStyle = 'horse' | 'marker';
 
 export interface RenderHorse {
   number: number;
@@ -13,22 +14,33 @@ export interface RenderHorse {
 
 export interface MockFrame {
   time: number;
-  phase: 'gate' | 'opening' | 'race' | 'final' | 'photo';
+  displayTime: number;
+  phase: 'gate' | 'opening' | 'race' | 'final' | 'photo_wait' | 'photo_review' | 'photo_result';
   phaseLabel: string;
   commentary: string;
   gateOpen: number;
   horses: RenderHorse[];
   remaining: number;
   pace: string;
+  photoFrame: number;
+  photoFrameCount: number;
+  officialOrderReady: boolean;
+  officialOrder: number[];
 }
 
-export const MOCK_DURATION = 60;
+export const MOCK_DURATION = 62;
 export const SCENE_TIMES: Record<MockScene, number> = {
   gate: 1.5,
   race: 18,
   final: 45,
-  photo: 55,
+  photo: 52.35,
 };
+
+export const PHOTO_REVIEW_START = 55;
+export const PHOTO_RESULT_START = 58.5;
+const PHOTO_FRAME_COUNT = 7;
+const PHOTO_REPLAY_FROM = 51.92;
+const PHOTO_REPLAY_TO = 52.42;
 
 const HORSES = [
   ['ノーザンライト', '#ef174f', -0.4, 0.002, 0.006],
@@ -50,20 +62,11 @@ const smoothstep = (a: number, b: number, value: number) => {
   return t * t * (3 - 2 * t);
 };
 
-export function sampleMockRace(time: number): MockFrame {
-  const t = ((time % MOCK_DURATION) + MOCK_DURATION) % MOCK_DURATION;
-  const gateOpen = smoothstep(4, 5.2, t);
-  const raceT = Math.max(0, t - 5.2);
-  const base = Math.min(1.012, raceT / 47.2);
+function sampleHorsePositions(positionTime: number): RenderHorse[] {
+  const raceT = Math.max(0, positionTime - 5.2);
+  const base = Math.min(1.028, raceT / 47.2);
   const launchBlend = smoothstep(0, 0.08, base);
-
-  let phase: MockFrame['phase'];
-  if (t < 4) phase = 'gate';
-  else if (t < 5.2) phase = 'opening';
-  else if (base < 0.82) phase = 'race';
-  else if (base < 1) phase = 'final';
-  else phase = 'photo';
-
+  const finishAtBase = [1.0000, 1.006, 1.010, 1.014, 1.004, 1.008, 1.016, 1.00015, 1.020, 1.012, 1.018, 1.022];
   const horses = HORSES.map(([name, color, runningLane, early, late], index) => {
     const gateLane = index - 5.5;
     const lane = gateLane + (runningLane - gateLane) * launchBlend
@@ -73,13 +76,12 @@ export function sampleMockRace(time: number): MockFrame {
     const rhythm = Math.sin(base * 12 + index * 0.91) * 0.0025 * earlyShape;
     let progress = base + early * earlyShape + late * lateShape + rhythm;
 
-    // The mock's top two converge naturally at the line so photo-finish framing can be judged.
-    if (index === 0) progress += 0.0055 * lateShape;
-    if (index === 7) progress += 0.0025 * lateShape;
-    const finishTargets = [1.0020, 0.985, 0.977, 0.970, 0.992, 0.982, 0.966, 1.0012, 0.958, 0.974, 0.963, 0.952];
-    const finishBlend = smoothstep(0.94, 1, base);
-    progress += (finishTargets[index] - progress) * finishBlend;
-    if (t < 5.2) progress = 0;
+    // Every runner keeps its continuous real position. These deterministic finish
+    // instants establish the official order without rearranging photo-review frames.
+    const finishTarget = 1 + (base - finishAtBase[index]) * 1.4;
+    const finishBlend = smoothstep(0.90, 0.975, base);
+    progress += (finishTarget - progress) * finishBlend;
+    if (positionTime < 5.2) progress = 0;
 
     return {
       number: index + 1,
@@ -94,6 +96,33 @@ export function sampleMockRace(time: number): MockFrame {
 
   const ordered = [...horses].sort((a, b) => b.progress - a.progress || a.number - b.number);
   ordered.forEach((horse, index) => { horse.rank = index + 1; });
+  return horses;
+}
+
+export function sampleMockRace(time: number): MockFrame {
+  const t = ((time % MOCK_DURATION) + MOCK_DURATION) % MOCK_DURATION;
+  const actualBase = Math.min(1.028, Math.max(0, t - 5.2) / 47.2);
+  let phase: MockFrame['phase'];
+  if (t < 4) phase = 'gate';
+  else if (t < 5.2) phase = 'opening';
+  else if (actualBase < 0.82) phase = 'race';
+  else if (actualBase < 1) phase = 'final';
+  else if (t < PHOTO_REVIEW_START) phase = 'photo_wait';
+  else if (t < PHOTO_RESULT_START) phase = 'photo_review';
+  else phase = 'photo_result';
+
+  let photoFrame = 0;
+  let displayTime = t;
+  if (phase === 'photo_review' || phase === 'photo_result') {
+    photoFrame = phase === 'photo_result'
+      ? PHOTO_FRAME_COUNT - 1
+      : Math.min(PHOTO_FRAME_COUNT - 1, Math.floor((t - PHOTO_REVIEW_START) / ((PHOTO_RESULT_START - PHOTO_REVIEW_START) / PHOTO_FRAME_COUNT)));
+    displayTime = PHOTO_REPLAY_FROM + (PHOTO_REPLAY_TO - PHOTO_REPLAY_FROM) * (photoFrame / (PHOTO_FRAME_COUNT - 1));
+  }
+
+  const gateOpen = smoothstep(4, 5.2, displayTime);
+  const horses = sampleHorsePositions(displayTime);
+  const ordered = [...horses].sort((a, b) => b.progress - a.progress || a.number - b.number);
   const leader = ordered[0];
 
   const phaseCopy = {
@@ -101,17 +130,24 @@ export function sampleMockRace(time: number): MockFrame {
     opening: ['スタート', 'ゲートが開いた！ 12頭一斉に飛び出します'],
     race: ['向正面', `${leader.name}が先頭、馬群はひと固まり`],
     final: ['最後の直線', `${leader.name}先頭！ 後続も一気に迫る`],
-    photo: ['写真判定', '並んでゴール！ 勝敗は写真判定へ'],
+    photo_wait: ['写真判定待ち', '1着・2着は写真判定。後続各馬も入線します'],
+    photo_review: ['写真判定', `ゴール時点を確認中 ${photoFrame + 1}/${PHOTO_FRAME_COUNT}`],
+    photo_result: ['判定結果', 'こっちだ！ 1番ノーザンライトがわずかに先着'],
   } as const;
 
   return {
     time: t,
+    displayTime,
     phase,
     phaseLabel: phaseCopy[phase][0],
     commentary: phaseCopy[phase][1],
     gateOpen,
     horses,
     remaining: Math.max(0, Math.round(1600 * (1 - Math.min(1, leader.progress)))),
-    pace: base < 0.58 ? 'ミドルペース' : 'ペース上昇',
+    pace: actualBase < 0.58 ? 'ミドルペース' : 'ペース上昇',
+    photoFrame,
+    photoFrameCount: PHOTO_FRAME_COUNT,
+    officialOrderReady: t >= PHOTO_REVIEW_START,
+    officialOrder: [1, 8, 5, 2, 6, 3, 10, 4, 7, 11, 9, 12],
   };
 }

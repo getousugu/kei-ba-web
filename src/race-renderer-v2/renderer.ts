@@ -1,4 +1,4 @@
-import type { CameraMode, MockFrame, RenderHorse } from './model';
+import type { CameraMode, MockFrame, RenderHorse, RunnerStyle } from './model';
 
 type Vec = { x: number; y: number };
 type Camera = Vec & { zoom: number };
@@ -83,9 +83,12 @@ function drawGate(ctx: CanvasRenderingContext2D, frame: MockFrame) {
   });
 }
 
-function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: MockFrame, now: number, selected: number | null) {
+function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: MockFrame, now: number, selectedNumbers: number[], runnerStyle: RunnerStyle) {
   const p = trackPoint(horse.progress, horse.lane);
   const gateOffset = frame.phase === 'gate' || frame.phase === 'opening' ? -72 * (1 - frame.gateOpen) : 0;
+  const selectionIndex = selectedNumbers.indexOf(horse.number);
+  const isSelected = selectionIndex >= 0;
+  const focusColors = ['#ffd44a', '#38d9ff', '#ff62c7'];
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(p.rotation);
@@ -100,11 +103,18 @@ function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: Moc
   ctx.fillStyle = 'rgba(0,0,0,.28)';
   ctx.beginPath(); ctx.ellipse(-1, 6, 31, 9, 0, 0, Math.PI * 2); ctx.fill();
 
-  if (selected === horse.number) {
-    ctx.strokeStyle = '#ffd44a';
+  if (isSelected) {
+    ctx.strokeStyle = focusColors[selectionIndex];
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.ellipse(1, 0, 36, 19, 0, 0, Math.PI * 2); ctx.stroke();
   }
+
+  if (runnerStyle === 'marker') {
+    ctx.fillStyle = horse.color;
+    ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+  } else {
 
   const coats = ['#44271b', '#5a3422', '#34241f', '#6a4028', '#2d2522'];
   const coat = coats[(horse.number - 1) % coats.length];
@@ -165,10 +175,32 @@ function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: Moc
   ctx.beginPath(); ctx.moveTo(12, 2); ctx.lineTo(19, 1); ctx.stroke();
   ctx.restore();
 
-  if ((frame.phase === 'race' || frame.phase === 'final' || frame.phase === 'photo') && (horse.rank === 1 || selected === horse.number)) {
+  }
+
+  // The number is the primary race-reading affordance. It stays upright and
+  // high-contrast regardless of course direction or horse/marker style.
+  const badgeX = p.x + Math.cos(p.rotation) * gateOffset;
+  const badgeY = p.y + Math.sin(p.rotation) * gateOffset - (runnerStyle === 'horse' ? 22 : 0);
+  ctx.save();
+  ctx.translate(badgeX, badgeY);
+  if (isSelected) {
+    ctx.strokeStyle = focusColors[selectionIndex];
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.fillStyle = horse.color;
+  ctx.beginPath(); ctx.arc(0, 0, runnerStyle === 'horse' ? 13 : 16, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = '900 12px system-ui';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(horse.number), 0, 0.5);
+  ctx.restore();
+
+  if (!['gate', 'opening'].includes(frame.phase) && horse.rank === 1) {
     ctx.save();
-    ctx.translate(p.x, p.y - 30);
-    ctx.font = '800 16px system-ui';
+    ctx.translate(p.x, p.y - 35);
+    ctx.font = '800 15px system-ui';
     ctx.textAlign = 'center';
     ctx.strokeStyle = 'rgba(0,0,0,.9)'; ctx.lineWidth = 5;
     ctx.strokeText(horse.name, 0, 0);
@@ -177,10 +209,12 @@ function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: Moc
   }
 }
 
-function targetCamera(frame: MockFrame, mode: CameraMode, width: number, height: number): Camera {
+function targetCamera(frame: MockFrame, mode: CameraMode, width: number, height: number, selectedNumbers: number[]): Camera {
   const ranked = [...frame.horses].sort((a, b) => a.rank - b.rank);
   const leader = trackPoint(ranked[0].progress, ranked[0].lane);
-  const pack = ranked.slice(0, 5).map(h => trackPoint(h.progress, h.lane));
+  const selected = ranked.filter(h => selectedNumbers.includes(h.number));
+  const focusHorses = selected.length ? [...new Map([ranked[0], ...selected].map(h => [h.number, h])).values()] : ranked.slice(0, 5);
+  const pack = focusHorses.map(h => trackPoint(h.progress, h.lane));
   const avg = pack.reduce((sum, p) => ({ x: sum.x + p.x / pack.length, y: sum.y + p.y / pack.length }), { x: 0, y: 0 });
   const overviewZoom = Math.min(width / 3300, height / 2100);
 
@@ -188,8 +222,13 @@ function targetCamera(frame: MockFrame, mode: CameraMode, width: number, height:
   if (mode === 'leader') return { x: leader.x, y: leader.y, zoom: 1.32 };
   if (mode === 'broadcast') return { x: avg.x, y: avg.y, zoom: frame.phase === 'final' ? 1.08 : 0.82 };
   if (frame.phase === 'gate' || frame.phase === 'opening') return { x: 0, y: RY, zoom: 1.15 };
-  if (frame.phase === 'final' || frame.phase === 'photo') return { x: 0, y: RY, zoom: 1.2 };
-  return { x: avg.x, y: avg.y, zoom: 0.86 };
+  const finishBlend = Math.max(0, Math.min(1, (ranked[0].progress - 0.82) / 0.18));
+  const smoothFinishBlend = finishBlend * finishBlend * (3 - 2 * finishBlend);
+  return {
+    x: lerp(avg.x, 0, smoothFinishBlend),
+    y: lerp(avg.y, RY, smoothFinishBlend),
+    zoom: lerp(selected.length > 1 ? 0.76 : 0.86, 1.16, smoothFinishBlend),
+  };
 }
 
 export function renderRaceFrame(
@@ -199,10 +238,11 @@ export function renderRaceFrame(
   frame: MockFrame,
   cameraMode: CameraMode,
   camera: Camera,
-  selected: number | null,
+  selectedNumbers: number[],
+  runnerStyle: RunnerStyle,
   now: number,
 ) {
-  const target = targetCamera(frame, cameraMode, width, height);
+  const target = targetCamera(frame, cameraMode, width, height, selectedNumbers);
   const ease = 0.055;
   camera.x = lerp(camera.x, target.x, ease);
   camera.y = lerp(camera.y, target.y, ease);
@@ -216,7 +256,7 @@ export function renderRaceFrame(
   ctx.translate(-camera.x, -camera.y);
   drawTrack(ctx);
   drawGate(ctx, frame);
-  [...frame.horses].sort((a, b) => b.rank - a.rank).forEach(horse => drawHorse(ctx, horse, frame, now, selected));
+  [...frame.horses].sort((a, b) => b.rank - a.rank).forEach(horse => drawHorse(ctx, horse, frame, now, selectedNumbers, runnerStyle));
   ctx.restore();
 }
 

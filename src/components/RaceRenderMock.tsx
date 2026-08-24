@@ -8,6 +8,7 @@ import {
   type CameraMode,
   type MockFrame,
   type MockScene,
+  type RunnerStyle,
 } from '../race-renderer-v2/model';
 
 const SCENES: { id: MockScene; label: string }[] = [
@@ -33,8 +34,13 @@ export default function RaceRenderMock() {
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [cameraMode, setCameraMode] = useState<CameraMode>('auto');
-  const [selectedHorse, setSelectedHorse] = useState<number | null>(null);
+  const [runnerStyle, setRunnerStyle] = useState<RunnerStyle>(() => window.localStorage.getItem('race-renderer-style') === 'marker' ? 'marker' : 'horse');
+  const [selectedHorses, setSelectedHorses] = useState<number[]>([]);
   const [frame, setFrame] = useState<MockFrame>(() => sampleMockRace(SCENE_TIMES.gate));
+
+  useEffect(() => {
+    window.localStorage.setItem('race-renderer-style', runnerStyle);
+  }, [runnerStyle]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -60,11 +66,19 @@ export default function RaceRenderMock() {
       if (lastTickRef.current === null) lastTickRef.current = now;
       const delta = Math.min(0.05, (now - lastTickRef.current) / 1000);
       lastTickRef.current = now;
-      if (playing) timeRef.current = (timeRef.current + delta * speed) % MOCK_DURATION;
+      if (playing) {
+        const advancedTime = timeRef.current + delta * speed;
+        if (advancedTime >= MOCK_DURATION) {
+          timeRef.current = MOCK_DURATION - 0.01;
+          setPlaying(false);
+        } else {
+          timeRef.current = advancedTime;
+        }
+      }
       const nextFrame = sampleMockRace(timeRef.current);
 
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      renderRaceFrame(context, width, height, nextFrame, cameraMode, cameraRef.current, selectedHorse, now);
+      renderRaceFrame(context, width, height, nextFrame, cameraMode, cameraRef.current, selectedHorses, runnerStyle, now);
       if (now - hudTickRef.current > 90) {
         hudTickRef.current = now;
         setFrame(nextFrame);
@@ -77,16 +91,36 @@ export default function RaceRenderMock() {
       observer.disconnect();
       lastTickRef.current = null;
     };
-  }, [cameraMode, playing, selectedHorse, speed]);
+  }, [cameraMode, playing, runnerStyle, selectedHorses, speed]);
 
   const jumpTo = (scene: MockScene) => {
     timeRef.current = SCENE_TIMES[scene];
     cameraRef.current = initialCamera();
     setFrame(sampleMockRace(timeRef.current));
+    if (scene === 'photo') setPlaying(true);
   };
 
-  const ordered = [...frame.horses].sort((a, b) => a.rank - b.rank);
-  const selected = frame.horses.find(horse => horse.number === selectedHorse);
+  const photoPending = frame.phase === 'photo_wait' || frame.phase === 'photo_review';
+  const ordered = [...frame.horses].sort((a, b) => {
+    if (frame.officialOrderReady) {
+      const officialA = frame.officialOrder.indexOf(a.number);
+      const officialB = frame.officialOrder.indexOf(b.number);
+      if (photoPending && officialA <= 1 && officialB <= 1) return a.number - b.number;
+      return officialA - officialB;
+    }
+    if (photoPending && a.rank <= 2 && b.rank <= 2) return a.number - b.number;
+    return a.rank - b.rank;
+  });
+  const displayedRank = (horseNumber: number, liveRank: number) => frame.officialOrderReady
+    ? frame.officialOrder.indexOf(horseNumber) + 1
+    : liveRank;
+  const selected = selectedHorses.map(number => frame.horses.find(horse => horse.number === number)).filter(Boolean) as MockFrame['horses'];
+  const toggleHorse = (number: number) => {
+    setSelectedHorses(current => {
+      if (current.includes(number)) return current.filter(item => item !== number);
+      return current.length < 3 ? [...current, number] : [...current.slice(1), number];
+    });
+  };
 
   return (
     <main className="h-screen min-h-[620px] bg-[#07100b] text-white overflow-hidden font-sans flex flex-col">
@@ -103,7 +137,7 @@ export default function RaceRenderMock() {
 
         <nav className="hidden md:flex items-center gap-1 bg-black/25 p-1 rounded-xl border border-white/10" aria-label="場面選択">
           {SCENES.map(scene => (
-            <button key={scene.id} onClick={() => jumpTo(scene.id)} className={`px-4 py-2 rounded-lg text-xs font-black transition ${frame.phase === scene.id || (scene.id === 'gate' && frame.phase === 'opening') ? 'bg-emerald-500 text-[#06130c]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <button key={scene.id} onClick={() => jumpTo(scene.id)} className={`px-4 py-2 rounded-lg text-xs font-black transition ${frame.phase === scene.id || (scene.id === 'gate' && frame.phase === 'opening') || (scene.id === 'photo' && frame.phase.startsWith('photo_')) ? 'bg-emerald-500 text-[#06130c]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
               {scene.label}
             </button>
           ))}
@@ -134,24 +168,54 @@ export default function RaceRenderMock() {
             </div>
           </div>
 
-          <div className="absolute top-4 right-4 bg-[#08100c]/90 backdrop-blur border border-white/10 rounded-xl p-1 flex items-center shadow-xl">
-            <div className="w-8 h-8 grid place-items-center text-gray-500"><Camera size={15} /></div>
-            {CAMERAS.map(camera => (
-              <button key={camera.id} onClick={() => setCameraMode(camera.id)} className={`px-3 h-8 rounded-lg text-[11px] font-black ${cameraMode === camera.id ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>
-                {camera.label}
-              </button>
-            ))}
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <div className="bg-[#08100c]/90 backdrop-blur border border-white/10 rounded-xl p-1 flex items-center shadow-xl">
+              <span className="px-2 text-[9px] text-gray-500 font-black tracking-wider">表示</span>
+              {([{ id: 'horse', label: '馬' }, { id: 'marker', label: '丸' }] as const).map(style => (
+                <button key={style.id} onClick={() => setRunnerStyle(style.id)} className={`w-10 h-8 rounded-lg text-[11px] font-black ${runnerStyle === style.id ? 'bg-emerald-400 text-[#06130c]' : 'text-gray-400 hover:text-white'}`}>
+                  {style.label}
+                </button>
+              ))}
+            </div>
+            <div className="bg-[#08100c]/90 backdrop-blur border border-white/10 rounded-xl p-1 flex items-center shadow-xl">
+              <div className="w-8 h-8 grid place-items-center text-gray-500"><Camera size={15} /></div>
+              {CAMERAS.map(camera => (
+                <button key={camera.id} onClick={() => setCameraMode(camera.id)} className={`px-3 h-8 rounded-lg text-[11px] font-black ${cameraMode === camera.id ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>
+                  {camera.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="absolute left-1/2 -translate-x-1/2 top-5 text-center pointer-events-none">
             <div className="text-[10px] tracking-[.34em] text-white/55 font-black uppercase">{frame.phaseLabel}</div>
           </div>
 
-          {frame.phase === 'photo' && (
+          {frame.phase === 'photo_wait' && (
             <div className="absolute inset-x-0 top-20 flex justify-center pointer-events-none">
-              <div className="bg-[#0b1110]/88 border-y border-white/20 px-8 py-3 text-center shadow-2xl">
-                <div className="text-[10px] text-amber-300 tracking-[.45em] font-black">PHOTO FINISH</div>
-                <div className="mt-1 text-xl font-black">1着・2着 写真判定中</div>
+              <div className="bg-[#0b1110]/92 border-y border-amber-300/35 px-10 py-3 text-center shadow-2xl">
+                <div className="text-[10px] text-amber-300 tracking-[.4em] font-black">PHOTO FINISH PENDING</div>
+                <div className="mt-1 text-xl font-black">1着・2着 写真判定待ち</div>
+                <div className="mt-1 text-xs text-gray-300 font-bold">全頭の着順決定をお待ちください</div>
+              </div>
+            </div>
+          )}
+
+          {frame.phase === 'photo_review' && (
+            <div className="absolute inset-x-0 top-20 flex justify-center pointer-events-none">
+              <div className="bg-[#0b1110]/92 border-y border-white/25 px-10 py-3 text-center shadow-2xl">
+                <div className="text-[10px] text-amber-300 tracking-[.4em] font-black">PHOTO FINISH</div>
+                <div className="mt-1 text-xl font-black">写真判定中 {frame.photoFrame + 1}/{frame.photoFrameCount}</div>
+                <div className="mt-1 text-xs text-gray-300 font-bold">実際のゴール時点を全馬込みで確認しています</div>
+              </div>
+            </div>
+          )}
+
+          {frame.phase === 'photo_result' && (
+            <div className="absolute inset-x-0 top-20 flex justify-center pointer-events-none">
+              <div className="bg-[#0b1110]/92 border-y border-emerald-300/35 px-10 py-3 text-center shadow-2xl">
+                <div className="text-[10px] text-emerald-300 tracking-[.4em] font-black">OFFICIAL RESULT</div>
+                <div className="mt-1 text-xl font-black">こっちだ！ 1番 ノーザンライト</div>
               </div>
             </div>
           )}
@@ -162,12 +226,14 @@ export default function RaceRenderMock() {
             </div>
           </div>
 
-          {selected && (
-            <div className="absolute left-4 bottom-20 bg-[#08100c]/92 border border-amber-300/30 rounded-xl px-4 py-3 shadow-xl pointer-events-none">
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-full border-2 border-white grid place-items-center font-black" style={{ background: selected.color }}>{selected.number}</span>
-                <div><div className="font-black text-sm">{selected.name}</div><div className="text-[10px] text-gray-400">現在 {selected.rank}番手 · 余力 {Math.round(selected.energy * 100)}%</div></div>
-              </div>
+          {selected.length > 0 && (
+            <div className="absolute left-4 bottom-20 bg-[#08100c]/92 border border-white/15 rounded-xl p-2 shadow-xl pointer-events-none flex flex-col gap-1.5">
+              {selected.map((horse, index) => (
+                <div key={horse.number} className="flex items-center gap-2 pr-2">
+                  <span className={`w-8 h-8 rounded-full border-[3px] grid place-items-center font-black ${index === 0 ? 'border-amber-300' : index === 1 ? 'border-cyan-300' : 'border-pink-300'}`} style={{ background: horse.color }}>{horse.number}</span>
+                  <div><div className="font-black text-xs">{horse.name}</div><div className="text-[9px] text-gray-400">{photoPending && displayedRank(horse.number, horse.rank) <= 2 ? '判定待ち' : `現在 ${displayedRank(horse.number, horse.rank)}番手`} · 余力 {Math.round(horse.energy * 100)}%</div></div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -190,8 +256,8 @@ export default function RaceRenderMock() {
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
             {ordered.map(horse => (
-              <button key={horse.number} onClick={() => setSelectedHorse(current => current === horse.number ? null : horse.number)} className={`w-full h-11 rounded-lg px-2 flex items-center gap-2 text-left border transition ${selectedHorse === horse.number ? 'bg-amber-300/10 border-amber-300/45' : 'bg-white/[.025] border-transparent hover:bg-white/5'}`}>
-                <span className={`w-5 text-center text-xs font-black ${horse.rank <= 3 ? 'text-amber-300' : 'text-gray-500'}`}>{horse.rank}</span>
+              <button key={horse.number} onClick={() => toggleHorse(horse.number)} className={`w-full h-11 rounded-lg px-2 flex items-center gap-2 text-left border transition ${selectedHorses.includes(horse.number) ? 'bg-white/[.08] border-white/30' : 'bg-white/[.025] border-transparent hover:bg-white/5'}`}>
+                <span className={`w-5 text-center text-xs font-black ${displayedRank(horse.number, horse.rank) <= 3 ? 'text-amber-300' : 'text-gray-500'}`}>{photoPending && displayedRank(horse.number, horse.rank) <= 2 ? '?' : displayedRank(horse.number, horse.rank)}</span>
                 <span className="w-7 h-7 rounded-full border-2 border-white/90 grid place-items-center text-[10px] font-black" style={{ background: horse.color }}>{horse.number}</span>
                 <span className="flex-1 min-w-0 text-xs font-bold truncate">{horse.name}</span>
                 <span className="text-[9px] font-mono text-gray-500">{Math.round(horse.energy * 100)}%</span>
@@ -199,7 +265,7 @@ export default function RaceRenderMock() {
             ))}
           </div>
           <div className="p-3 border-t border-white/10 text-[10px] leading-relaxed text-gray-500">
-            馬を選ぶと追跡表示。順位と走行レーンは独立しているため、追い越し時も横へ瞬間移動しません。
+            最大3頭を同時に注目表示。4頭目を選ぶと、最初に選んだ馬と入れ替わります。
           </div>
         </aside>
       </section>
