@@ -8,6 +8,9 @@ const STAGE_DUR = 2500;  // Time per simulation stage (ms)
 const MAX_COUNTDOWN = 5; // カウントダウン上限 (= raceStartTime バッファと揃える)
 const GATE_OPEN_DUR = 750; // Keep race progress at zero until the gate transition is complete
 const GOAL_STAGE_DUR = 5000; // Extra time for the final stretch
+const TRACK_RX = 1400;
+const TRACK_RY = 800;
+const TRACK_WIDTH = 180;
 type PhotoPhase = 'none' | 'waiting' | 'review' | 'reveal' | 'complete';
 
 function lerp(a: number, b: number, t: number) {
@@ -17,6 +20,84 @@ function lerp(a: number, b: number, t: number) {
 function getTrackPos(progress: number, rx: number, ry: number) {
   const angle = -(progress * 2 * Math.PI) + Math.PI / 2;
   return { x: rx * Math.cos(angle), y: ry * Math.sin(angle), angle };
+}
+
+function getTrackColors(fieldCondition?: string) {
+  if (fieldCondition === '良') return { grass: '#1a3a1a', dirt: '#d2b48c' };
+  if (fieldCondition === '重') return { grass: '#152515', dirt: '#a68a62' };
+  if (fieldCondition === '不良') return { grass: '#1a1d15', dirt: '#8b7355' };
+  return { grass: '#1a2e1a', dirt: '#c1a173' };
+}
+
+function drawTrackSurface(ctx: CanvasRenderingContext2D, grassColor: string, dirtColor: string) {
+  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX + TRACK_WIDTH, TRACK_RY + TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.fillStyle = grassColor; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX + TRACK_WIDTH, TRACK_RY + TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.ellipse(0, 0, TRACK_RX - TRACK_WIDTH, TRACK_RY - TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.fillStyle = dirtColor; ctx.fill('evenodd');
+  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX - TRACK_WIDTH, TRACK_RY - TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.fillStyle = grassColor; ctx.fill();
+  ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX + TRACK_WIDTH, TRACK_RY + TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, 0, TRACK_RX - TRACK_WIDTH, TRACK_RY - TRACK_WIDTH, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(-100, TRACK_RY); ctx.lineTo(100, TRACK_RY); ctx.stroke();
+}
+
+function drawStartingGateScene(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  horses: any[],
+  fieldCondition: string | undefined,
+  openProgress: number,
+) {
+  const { grass, dirt } = getTrackColors(fieldCondition);
+  ctx.fillStyle = '#0f140f';
+  ctx.fillRect(0, 0, width, height);
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.scale(1.1, 1.1);
+  ctx.translate(0, -TRACK_RY);
+  drawTrackSurface(ctx, grass, dirt);
+
+  horses.forEach((horse, index) => {
+    const laneOffset = (index / Math.max(1, horses.length - 1) - 0.5) * TRACK_WIDTH * 1.7;
+    const gateY = TRACK_RY + laneOffset;
+    const horseX = -72 * (1 - openProgress);
+    const color = HORSE_COLORS[horse.horse_number - 1] || '#888';
+
+    ctx.strokeStyle = '#c9d0cc';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-112, gateY - 13, 112, 26);
+    ctx.fillStyle = 'rgba(57, 68, 63, 0.72)';
+    ctx.fillRect(-112, gateY - 13, 112, 26);
+
+    // Front doors open away from the horse while it moves to the shared start position.
+    ctx.save();
+    ctx.translate(0, gateY);
+    ctx.rotate(-openProgress * Math.PI / 2);
+    ctx.strokeStyle = '#dce2df';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -13); ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(0, gateY);
+    ctx.rotate(openProgress * Math.PI / 2);
+    ctx.strokeStyle = '#dce2df';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 13); ctx.stroke();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(horseX, gateY, 14, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(horse.horse_number), horseX, gateY);
+  });
+  ctx.restore();
 }
 
 export default function RacePhase() {
@@ -164,6 +245,7 @@ export default function RacePhase() {
         addLog('🏁 まもなく発走します');
       }
 
+      drawStartingGateScene(ctx, W, H, horsesRef.current, raceData?.field_condition, 0);
       rafRef.current = requestAnimationFrame(loop);
       return;
     } else {
@@ -177,6 +259,19 @@ export default function RacePhase() {
           photoTimersRef.current.push(setTimeout(() => setGateOpening(false), GATE_OPEN_DUR));
         }
       }
+    }
+
+    if (elapsed < GATE_OPEN_DUR) {
+      drawStartingGateScene(
+        ctx,
+        W,
+        H,
+        horsesRef.current,
+        raceData?.field_condition,
+        Math.min(1, elapsed / GATE_OPEN_DUR),
+      );
+      rafRef.current = requestAnimationFrame(loop);
+      return;
     }
 
     // 120s Timeout
@@ -478,10 +573,10 @@ export default function RacePhase() {
     }
 
     const hPositions: any[] = [];
-    const baseRX = 1400, baseRY = 800, trackWidth = 180;
+    const startSpread = 0.8 + 0.9 * (1 - Math.min(1, (sorted[0]?.progress ?? 0) / 0.04));
     sorted.forEach((h, rank) => {
-      const pos = getTrackPos(h.progress, baseRX, baseRY);
-      const laneOffset = (rank / Math.max(1, horsesRef.current.length - 1) - 0.5) * trackWidth * 0.8;
+      const pos = getTrackPos(h.progress, TRACK_RX, TRACK_RY);
+      const laneOffset = (rank / Math.max(1, horsesRef.current.length - 1) - 0.5) * TRACK_WIDTH * startSpread;
       const nx = Math.cos(pos.angle), ny = Math.sin(pos.angle);
       hPositions.push({ hn: h.hn, x: pos.x + nx * laneOffset, y: pos.y + ny * laneOffset, progress: h.progress, rank: rank + 1, name: h.name });
     });
@@ -505,24 +600,14 @@ export default function RacePhase() {
     cameraRef.current.zoom = lerp(cameraRef.current.zoom, targetZoom, zoomAlpha);
 
     ctx.save();
-    const fc = raceData?.field_condition || '良';
-    let grassColor = '#1a2e1a'; let dirtColor = '#c1a173';
-    if (fc === '良') { grassColor = '#1a3a1a'; dirtColor = '#d2b48c'; }
-    if (fc === '重') { grassColor = '#152515'; dirtColor = '#a68a62'; }
-    if (fc === '不良') { grassColor = '#1a1d15'; dirtColor = '#8b7355'; }
+    const { grass: grassColor, dirt: dirtColor } = getTrackColors(raceData?.field_condition);
 
     ctx.fillStyle = '#0f140f'; ctx.fillRect(0, 0, W, H);
     ctx.translate(W / 2, H / 2);
     ctx.scale(cameraRef.current.zoom, cameraRef.current.zoom);
     ctx.translate(-cameraRef.current.x, -cameraRef.current.y);
 
-    ctx.beginPath(); ctx.ellipse(0, 0, baseRX + trackWidth, baseRY + trackWidth, 0, 0, Math.PI * 2); ctx.fillStyle = grassColor; ctx.fill();
-    ctx.beginPath(); ctx.ellipse(0, 0, baseRX + trackWidth, baseRY + trackWidth, 0, 0, Math.PI * 2); ctx.ellipse(0, 0, baseRX - trackWidth, baseRY - trackWidth, 0, 0, Math.PI * 2); ctx.fillStyle = dirtColor; ctx.fill('evenodd');
-    ctx.beginPath(); ctx.ellipse(0, 0, baseRX - trackWidth, baseRY - trackWidth, 0, 0, Math.PI * 2); ctx.fillStyle = grassColor; ctx.fill();
-    ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(0, 0, baseRX + trackWidth, baseRY + trackWidth, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(0, 0, baseRX - trackWidth, baseRY - trackWidth, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(-100, baseRY); ctx.lineTo(100, baseRY); ctx.stroke();
+    drawTrackSurface(ctx, grassColor, dirtColor);
 
     hPositions.forEach(hp => {
       const color = HORSE_COLORS[hp.hn - 1] || '#888';
@@ -541,7 +626,7 @@ export default function RacePhase() {
         drawProg = 1.0 + 0.03 * (1 - Math.exp(-over / 0.03));
       }
 
-      const { angle } = getTrackPos(drawProg, baseRX, baseRY);
+      const { angle } = getTrackPos(drawProg, TRACK_RX, TRACK_RY);
       ctx.save(); ctx.rotate(angle - Math.PI / 2);
       ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(-6, -10); ctx.lineTo(0, -18); ctx.lineTo(6, -10); ctx.fill();
       ctx.restore();
@@ -670,30 +755,12 @@ export default function RacePhase() {
           )}
 
           {(countdown > 0 || gateOpening) && (
-            <div className="absolute inset-0 z-30 overflow-hidden bg-[#1a3a1a]">
-              {/* Top-down start area: same viewpoint and direction as the race canvas. */}
-              <div className="absolute inset-x-0 top-[12%] bottom-[12%] bg-[#b39a73] border-y-4 border-white/25" />
-              <div className="absolute top-[12%] bottom-[12%] left-1/2 w-1 bg-white/85 shadow-[0_0_0_1px_rgba(0,0,0,0.2)]" />
-              <div className="absolute top-[12%] bottom-[12%] left-1/2 border-l border-dashed border-black/45" />
+            <div className="absolute inset-0 z-30 overflow-hidden pointer-events-none">
               <div className="absolute top-5 right-6 min-w-24 rounded-xl bg-black/65 border border-white/15 px-5 py-3 text-center">
                 <div className="text-[10px] text-gray-300 font-black tracking-[0.25em]">START</div>
                 <div className="text-5xl leading-none font-black text-yellow-400 tabular-nums">{Math.max(0, countdown)}</div>
               </div>
-              <div className="absolute left-[44%] top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <div className="flex flex-col border-4 border-[#c9d0cc] bg-[#39443f] shadow-2xl">
-                  {horses.slice(0, 18).map((horse, index) => (
-                    <div key={horse.horse_number} className="relative w-24 h-9 border-b border-white/20 last:border-b-0 flex items-center justify-center">
-                      <div className="absolute left-1 inset-y-1 w-5 bg-[#212a26] text-[9px] text-white/70 font-black flex items-center justify-center">{index + 1}</div>
-                      <div className={`w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-[11px] text-white font-black transition-transform duration-700 ease-out ${gateOpening ? 'translate-x-16' : ''}`} style={{ background: HORSE_COLORS[horse.horse_number - 1] || '#777' }}>
-                        {horse.horse_number}
-                      </div>
-                      <div className={`absolute right-0 top-0 h-1/2 w-2 bg-[#83908a] border-b border-white/30 origin-top transition-transform duration-500 ${gateOpening ? '-rotate-90' : ''}`} />
-                      <div className={`absolute right-0 bottom-0 h-1/2 w-2 bg-[#83908a] border-t border-white/30 origin-bottom transition-transform duration-500 ${gateOpening ? 'rotate-90' : ''}`} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="absolute left-6 top-7 text-left">
+              <div className="absolute left-1/2 -translate-x-1/2 top-7 text-center">
                 <div className="text-sm md:text-lg text-white font-black tracking-[0.35em] drop-shadow-lg">
                   {gateOpening ? 'スタート！' : countdown <= 2 ? 'FANFARE' : '各馬ゲートイン'}
                 </div>
