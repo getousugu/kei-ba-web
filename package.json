@@ -10,6 +10,7 @@
     "build:server": "wrangler deploy --dry-run",
     "typecheck:server": "tsc -p server/tsconfig.json",
     "deploy:server": "wrangler deploy",
+    "deploy:server:test": "wrangler deploy --name kei-ba-central-dev",
     "lint": "eslint .",
     "preview": "vite preview"
   },

@@ -42,6 +42,12 @@ npm run deploy:server
 
 公開後、WorkerのURLを `.env` の `VITE_CENTRAL_API_URL` に設定してフロントを再ビルドします。
 
+### 現在のテストサーバー
+
+- URL: `https://kei-ba-central-dev.ger-03.workers.dev`
+- 再公開: `npm run deploy:server:test`
+- 本番用Workerとは分離し、動作確認専用に使用する。
+
 ## API
 
 - `GET /api/health`
