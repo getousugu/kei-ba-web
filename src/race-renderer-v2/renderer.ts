@@ -82,6 +82,16 @@ function drawGate(ctx: CanvasRenderingContext2D, frame: MockFrame) {
     ctx.strokeRect(-112, -12, 105, 24);
     ctx.save(); ctx.translate(-7, 0); ctx.rotate(-open * Math.PI / 2); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -12); ctx.stroke(); ctx.restore();
     ctx.save(); ctx.translate(-7, 0); ctx.rotate(open * Math.PI / 2); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 12); ctx.stroke(); ctx.restore();
+
+    // Each stall owns its number plate. Floating badges overlap adjacent stalls
+    // at the tightly packed gate, which made numbers flicker or disappear.
+    ctx.fillStyle = horse.color;
+    ctx.beginPath(); ctx.arc(-126, 0, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = '900 9px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(horse.number), -126, 0.5);
     ctx.restore();
   });
 }
@@ -97,7 +107,7 @@ function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: Moc
   ctx.rotate(p.rotation);
   ctx.translate(gateOffset, 0);
 
-  const running = frame.phase === 'race' || frame.phase === 'final';
+  const running = frame.phase === 'race' || frame.phase === 'final' || frame.phase === 'photo_wait';
   const cycle = now * 0.024 + horse.number * 0.83;
   const bob = running ? Math.sin(cycle * 2) * 1.15 : 0;
   ctx.translate(0, bob);
@@ -181,7 +191,8 @@ function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: Moc
   // high-contrast regardless of course direction or horse/marker style.
   const badgeX = p.x + Math.cos(p.rotation) * gateOffset + markerOffset;
   const badgeY = p.y + Math.sin(p.rotation) * gateOffset - (runnerStyle === 'horse' ? 22 : 0);
-  const showBadge = runnerStyle === 'marker' || horse.rank <= 5 || isSelected || frame.phase === 'gate' || frame.phase === 'opening';
+  const isAtGate = frame.phase === 'gate' || frame.phase === 'opening';
+  const showBadge = runnerStyle === 'marker' || (!isAtGate && (horse.rank <= 5 || isSelected));
   if (showBadge) {
     if (runnerStyle === 'marker' && markerOffset !== 0) {
       ctx.strokeStyle = 'rgba(255,255,255,.38)';
@@ -193,10 +204,10 @@ function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: Moc
     if (isSelected) {
       ctx.strokeStyle = focusColors[selectionIndex];
       ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, isAtGate ? 16 : 20, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.fillStyle = horse.color;
-    ctx.beginPath(); ctx.arc(0, 0, runnerStyle === 'horse' ? 13 : 17, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, runnerStyle === 'horse' ? 13 : isAtGate ? 12 : 17, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.fillStyle = '#fff';
     ctx.font = '900 12px system-ui';
@@ -226,10 +237,12 @@ function targetCamera(frame: MockFrame, mode: CameraMode, width: number, height:
   const avg = pack.reduce((sum, p) => ({ x: sum.x + p.x / pack.length, y: sum.y + p.y / pack.length }), { x: 0, y: 0 });
   const overviewZoom = Math.min(width / 3300, height / 2100);
 
+  // Camera choices apply after the break. During loading/opening every mode
+  // must show the same complete gate, otherwise "leader" crops most stalls.
+  if (frame.phase === 'gate' || frame.phase === 'opening') return { x: 0, y: RY, zoom: 1.15 };
   if (mode === 'overview') return { x: 0, y: 0, zoom: overviewZoom };
   if (mode === 'leader') return { x: leader.x, y: leader.y, zoom: 1.32 };
   if (mode === 'broadcast') return { x: avg.x, y: avg.y, zoom: frame.phase === 'final' ? 1.08 : 0.82 };
-  if (frame.phase === 'gate' || frame.phase === 'opening') return { x: 0, y: RY, zoom: 1.15 };
   const finishBlend = Math.max(0, Math.min(1, (ranked[0].progress - 0.82) / 0.18));
   const smoothFinishBlend = finishBlend * finishBlend * (3 - 2 * finishBlend);
   return {
@@ -270,7 +283,7 @@ export function renderRaceFrame(
   drawGate(ctx, frame);
   const drawingOrder = [...frame.horses].sort((a, b) => b.rank - a.rank);
   const markerOffsets = new Map<number, number>();
-  if (runnerStyle === 'marker') {
+  if (runnerStyle === 'marker' && frame.phase !== 'gate' && frame.phase !== 'opening') {
     const groups: RenderHorse[][] = [];
     [...frame.horses].sort((a, b) => b.progress - a.progress).forEach(horse => {
       const point = trackPoint(horse.progress, horse.lane);

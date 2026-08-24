@@ -29,8 +29,11 @@ function toRenderHorses(
   return raceHorses.map((horse, rank) => {
     const rosterIndex = Math.max(0, roster.findIndex(item => item.horse_number === horse.hn));
     const gateLane = rosterIndex - (roster.length - 1) / 2;
-    const runningLane = (((horse.hn * 37) % 11) - 5) * 0.36;
-    const launchBlend = Math.max(0, Math.min(1, horse.progress / 0.08));
+    // Keep the gate order recognizable after the break. The previous number
+    // hash sent 1 and 12 to the same lane and collapsed the field too quickly.
+    const laneVariation = (((horse.hn * 7) % 9) - 4) * 0.045;
+    const runningLane = gateLane * 0.38 + laneVariation;
+    const launchBlend = Math.max(0, Math.min(1, (horse.progress - 0.01) / 0.16));
     const smoothLaunch = launchBlend * launchBlend * (3 - 2 * launchBlend);
     const laneDrift = Math.sin(horse.progress * Math.PI * 4 + horse.hn * 0.91) * 0.12 * Math.min(1, horse.progress / 0.2);
     return {
@@ -88,16 +91,15 @@ function createRaceRenderFrame({
 }
 
 export default function RacePhase() {
-  const { horses, raceData, role, sessionHorseWins, lastWinnerHN, raceStartTime } = useGameStore();
+  const { horses, raceData, role, sessionHorseWins, lastWinnerHN } = useGameStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [countdown, setCountdown] = useState(3);
-  const [isStarted, setIsStarted] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [commentary, setCommentary] = useState<{ id: number; text: string; type?: string }[]>([]);
   const [telop, setTelop] = useState<string>('');
   const [rankings, setRankings] = useState<{ hn: number; name: string; progress: number; prevRank?: number; confirmed?: boolean }[]>([]);
-  const [pace, setPace] = useState<string>('');
+  const [pace, setPace] = useState<string>(raceData?.simulation?.pace || '');
   const [gateOpening, setGateOpening] = useState(false);
   const [photoPhase, setPhotoPhase] = useState<PhotoPhase>('none');
   const [photoFrame, setPhotoFrame] = useState(0);
@@ -107,6 +109,7 @@ export default function RacePhase() {
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const rafRef = useRef<number | null>(null);
+  const loopRef = useRef<(time: number) => void>(() => undefined);
   const lastStageRef = useRef(-1);
   const winnerCrossedRef = useRef(false);
   const milestonesRef = useRef(new Set<string>());
@@ -150,21 +153,6 @@ export default function RacePhase() {
   useEffect(() => { cameraModeRef.current = cameraMode; }, [cameraMode]);
   useEffect(() => { selectedHorsesRef.current = selectedHorses; }, [selectedHorses]);
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commentary]);
-
-  // ペースをシミュレーションデータから即座にセット（ステージ遷移待ちにしない）
-  useEffect(() => {
-    const p = raceData?.simulation?.pace;
-    if (p) setPace(p);
-  }, [raceData?.simulation?.pace]);
-
-  if (!horses || horses.length === 0 || !raceData || !raceData.simulation) {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-[#0c100c] text-white">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="font-black tracking-widest animate-pulse uppercase">Race Data Loading...</p>
-      </div>
-    );
-  }
 
   const addLog = useCallback((text: string, type?: string) => {
     setCommentary(p => [...p, { id: Date.now() + Math.random(), text, type }].slice(-50));
@@ -229,7 +217,7 @@ export default function RacePhase() {
   const loop = useCallback((time: number) => {
     const canvas = canvasRef.current;
     const sim = simRef.current;
-    if (!canvas || !sim) { rafRef.current = requestAnimationFrame(loop); return; }
+    if (!canvas || !sim) { rafRef.current = requestAnimationFrame(loopRef.current); return; }
 
     const ctx = canvas.getContext('2d')!;
     const W = canvas.width;
@@ -237,7 +225,7 @@ export default function RacePhase() {
 
     // 全プレイヤーで共通の絶対時刻を基準にする。ローカル fallback は使わない
     const raceStart = useGameStore.getState().raceStartTime;
-    if (!raceStart) { rafRef.current = requestAnimationFrame(loop); return; }
+    if (!raceStart) { rafRef.current = requestAnimationFrame(loopRef.current); return; }
     const now = Date.now();
     const elapsed = now - raceStart;
 
@@ -275,12 +263,11 @@ export default function RacePhase() {
         photoFrameCount: sim.presentation?.photoFinish?.frameCount || 7,
       });
       renderRaceFrame(ctx, W, H, gateFrame, cameraModeRef.current, cameraRef.current, selectedHorsesRef.current, runnerStyleRef.current, time);
-      rafRef.current = requestAnimationFrame(loop);
+      rafRef.current = requestAnimationFrame(loopRef.current);
       return;
     } else {
-      if (countdown !== 0) setCountdown(0);
+      setCountdown(0);
       if (!isStartedRef.current) {
-        setIsStarted(true);
         isStartedRef.current = true;
         if (!gateOpenTriggeredRef.current) {
           gateOpenTriggeredRef.current = true;
@@ -308,7 +295,7 @@ export default function RacePhase() {
         photoFrameCount: sim.presentation?.photoFinish?.frameCount || 7,
       });
       renderRaceFrame(ctx, W, H, openingFrame, cameraModeRef.current, cameraRef.current, selectedHorsesRef.current, runnerStyleRef.current, time);
-      rafRef.current = requestAnimationFrame(loop);
+      rafRef.current = requestAnimationFrame(loopRef.current);
       return;
     }
 
@@ -348,6 +335,7 @@ export default function RacePhase() {
       const info = sim.stages[stageIdx];
 
       if (stageIdx === 0) {
+        if (sim.pace) setPace(sim.pace);
         if (sim.pace) addLog(`🏁 レース開始 (ペース: ${sim.pace})`);
       }
 
@@ -478,7 +466,7 @@ export default function RacePhase() {
       }
 
       return b.progress - a.progress;
-    }).map((h, i) => ({ ...h, prevRank: prevRankingsRef.current[h.hn], confirmed: finishedHorsesRef.current.has(h.hn) }));
+    }).map(h => ({ ...h, prevRank: prevRankingsRef.current[h.hn], confirmed: finishedHorsesRef.current.has(h.hn) }));
 
 
 
@@ -669,7 +657,7 @@ export default function RacePhase() {
           });
         }
         startPhotoReview();
-        rafRef.current = requestAnimationFrame(loop);
+        rafRef.current = requestAnimationFrame(loopRef.current);
         return;
       }
 
@@ -687,11 +675,12 @@ export default function RacePhase() {
 
       return;
     }
-    rafRef.current = requestAnimationFrame(loop);
-  }, [addLog, handleNext, raceData?.field_condition, startPhotoReview]);
+    rafRef.current = requestAnimationFrame(loopRef.current);
+  }, [addLog, handleNext, lastWinnerHN, raceData?.distance, raceData?.field_condition, sessionHorseWins, startPhotoReview]);
 
   useEffect(() => {
-    rafRef.current = requestAnimationFrame(loop);
+    loopRef.current = loop;
+    rafRef.current = requestAnimationFrame(loopRef.current);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (nextTimerRef.current) clearTimeout(nextTimerRef.current);
@@ -715,6 +704,18 @@ export default function RacePhase() {
     if (!rankings.length) return totalDist;
     return Math.max(0, Math.round(totalDist * (1 - rankings[0].progress)));
   }, [rankings, raceData?.distance]);
+
+  // Keep every hook above this guard. Guests can briefly enter the race phase
+  // before the atomic race payload is available; returning earlier changed the
+  // hook count between renders and could break the gate screen entirely.
+  if (!horses || horses.length === 0 || !raceData || !raceData.simulation) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-[#0c100c] text-white">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="font-black tracking-widest animate-pulse uppercase">Race Data Loading...</p>
+      </div>
+    );
+  }
 
   const photoPlan = raceData?.simulation?.presentation?.photoFinish;
   const photoPending = !!photoPlan?.enabled && ['waiting', 'review'].includes(photoPhase);
@@ -758,7 +759,7 @@ export default function RacePhase() {
         <div className="flex-1 relative">
           <canvas ref={canvasRef} className="w-full h-full" />
 
-          <div className="absolute right-5 top-32 z-40 flex flex-col items-end gap-2">
+          <div className={`absolute top-4 z-40 flex flex-col items-end gap-2 transition-[right] ${countdown > 0 || gateOpening ? 'right-32' : 'right-5'}`}>
             <div className="flex rounded-xl border border-white/10 bg-black/65 p-1 shadow-xl backdrop-blur-md">
               {([['horse', '馬'], ['marker', '丸']] as const).map(([style, label]) => (
                 <button key={style} onClick={() => setRunnerStyle(style)} className={`h-8 min-w-11 rounded-lg px-3 text-[11px] font-black transition ${runnerStyle === style ? 'bg-emerald-400 text-[#06130c]' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}>
