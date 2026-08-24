@@ -7,6 +7,7 @@ import { HORSE_COLORS } from '../core/constants';
 const STAGE_DUR = 2500;  // Time per simulation stage (ms)
 const MAX_COUNTDOWN = 5; // カウントダウン上限 (= raceStartTime バッファと揃える)
 const GOAL_STAGE_DUR = 5000; // Extra time for the final stretch
+type PhotoPhase = 'none' | 'waiting' | 'review' | 'reveal' | 'complete';
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
@@ -28,6 +29,9 @@ export default function RacePhase() {
   const [telop, setTelop] = useState<string>('');
   const [rankings, setRankings] = useState<{ hn: number; name: string; progress: number; prevRank?: number; confirmed?: boolean }[]>([]);
   const [pace, setPace] = useState<string>('');
+  const [gateOpening, setGateOpening] = useState(false);
+  const [photoPhase, setPhotoPhase] = useState<PhotoPhase>('none');
+  const [photoFrame, setPhotoFrame] = useState(0);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const rafRef = useRef<number | null>(null);
@@ -37,6 +41,7 @@ export default function RacePhase() {
   const doneRef = useRef(false);
   const prevRankingsRef = useRef<Record<number, number>>({});
   const nextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const finishedHorsesRef = useRef<Set<number>>(new Set());
   const lastFinishTimeRef = useRef<number>(0);
   const lastOvertakeTimeRef = useRef<number>(0);
@@ -49,6 +54,9 @@ export default function RacePhase() {
   // Refs to avoid stale closure inside useCallback loop
   const isStartedRef = useRef(false);
   const isFinishedRef = useRef(false);
+  const photoPhaseRef = useRef<PhotoPhase>('none');
+  const gateOpenTriggeredRef = useRef(false);
+  const lastFrameTimeRef = useRef<number | null>(null);
   // raceStartTime はストアから直接読む。ローカル fallback は使わない（ズレの原因になる）
 
   const horsesRef = useRef(horses);
@@ -57,6 +65,7 @@ export default function RacePhase() {
 
   useEffect(() => { horsesRef.current = horses; }, [horses]);
   useEffect(() => { simRef.current = raceData?.simulation; }, [raceData?.simulation]);
+  useEffect(() => { photoPhaseRef.current = photoPhase; }, [photoPhase]);
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commentary]);
 
   // ペースをシミュレーションデータから即座にセット（ステージ遷移待ちにしない）
@@ -82,6 +91,43 @@ export default function RacePhase() {
     peerManager.broadcast({ type: 'phase_start', phase: 'result' });
     useGameStore.getState().setPhase('result');
   }, []);
+
+  const startPhotoReview = useCallback(() => {
+    const sim = simRef.current;
+    const plan = sim?.presentation?.photoFinish;
+    if (!plan?.enabled || photoPhaseRef.current === 'review' || photoPhaseRef.current === 'reveal') return;
+
+    photoPhaseRef.current = 'review';
+    setPhotoPhase('review');
+    setPhotoFrame(0);
+    setTelop('全馬入線。1着・2着は写真判定です');
+    addLog('📷 全馬入線。写真判定を開始します', 'photo');
+
+    const frameCount = plan.frameCount || 7;
+    const frameDelay = 320;
+    for (let frame = 1; frame < frameCount; frame++) {
+      photoTimersRef.current.push(setTimeout(() => setPhotoFrame(frame), 1000 + frame * frameDelay));
+    }
+
+    const revealAt = 1000 + frameCount * frameDelay + 650;
+    photoTimersRef.current.push(setTimeout(() => {
+      const winner = sim.results?.[0];
+      photoPhaseRef.current = 'reveal';
+      setPhotoPhase('reveal');
+      setTelop(`こっちだ！ ${winner?.horse_number}番 ${winner?.horse_name}！`);
+      addLog(`🏆 写真判定の結果、${winner?.horse_number}番 ${winner?.horse_name} が1着！`, 'finish');
+    }, revealAt));
+
+    photoTimersRef.current.push(setTimeout(() => {
+      photoPhaseRef.current = 'complete';
+      setPhotoPhase('complete');
+      isFinishedRef.current = true;
+      setIsFinished(true);
+      if (useGameStore.getState().role === 'host') {
+        nextTimerRef.current = setTimeout(handleNext, 1400);
+      }
+    }, revealAt + 1800));
+  }, [addLog, handleNext]);
 
   const loop = useCallback((time: number) => {
     const canvas = canvasRef.current;
@@ -122,6 +168,11 @@ export default function RacePhase() {
       if (!isStartedRef.current) {
         setIsStarted(true);
         isStartedRef.current = true;
+        if (!gateOpenTriggeredRef.current) {
+          gateOpenTriggeredRef.current = true;
+          setGateOpening(true);
+          photoTimersRef.current.push(setTimeout(() => setGateOpening(false), 750));
+        }
       }
     }
 
@@ -210,18 +261,27 @@ export default function RacePhase() {
     // Detect Winner Crossing
     if (!winnerCrossedRef.current && horsesInRace.some(h => h.progress >= 1.0)) {
       winnerCrossedRef.current = true;
-      const winner = [...horsesInRace].sort((a, b) => b.progress - a.progress)[0];
-      const hData = horsesRef.current.find(h => h.horse_number === winner.hn);
+      const officialWinner = sim.results?.[0];
+      const winner = horsesInRace.find(h => h.hn === officialWinner?.horse_number)
+        ?? [...horsesInRace].sort((a, b) => b.progress - a.progress)[0];
+      const photoPlan = sim.presentation?.photoFinish;
 
-      const finishLines = CommentaryGenerator.generateFinish(winner, hData?.popularity || 1);
-      finishLines.forEach((text, i) => {
-        setTimeout(() => {
-          setTelop(text);
-          setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
-        }, i * 1000);
-      });
-
-      addLog(`🏆 1着：${winner.name} 入線`);
+      if (photoPlan?.enabled) {
+        photoPhaseRef.current = 'waiting';
+        setPhotoPhase('waiting');
+        setTelop('並んだ！ これは分からない、写真判定です！');
+        addLog('📷 1着・2着は写真判定となります', 'photo');
+      } else {
+        const hData = horsesRef.current.find(h => h.horse_number === winner.hn);
+        const finishLines = CommentaryGenerator.generateFinish(winner, hData?.popularity || 1);
+        finishLines.forEach((text, i) => {
+          setTimeout(() => {
+            setTelop(text);
+            setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
+          }, i * 1000);
+        });
+        addLog(`🏆 1着：${winner.name} 入線`);
+      }
 
       finishedHorsesRef.current.add(winner.hn);
       lastFinishTimeRef.current = Date.now();
@@ -257,7 +317,8 @@ export default function RacePhase() {
         const timeSinceLast = nowTime - lastFinishTimeRef.current;
 
         // Rule: Always mention Top 3. 4th+ only if gap >= 2s.
-        if (currentFinishCount < 3 || timeSinceLast >= 2000) {
+        const isPhotoContender = sim.presentation?.photoFinish?.contenderHorseNumbers?.includes(h.hn);
+        if (!isPhotoContender && (currentFinishCount < 3 || timeSinceLast >= 2000)) {
           const rank = currentFinishCount + 1;
           const text = `🏁 ${rank}着：${h.name} 入線`;
           addLog(text, 'finish');
@@ -419,17 +480,23 @@ export default function RacePhase() {
       hPositions.push({ hn: h.hn, x: pos.x + nx * laneOffset, y: pos.y + ny * laneOffset, progress: h.progress, rank: rank + 1, name: h.name });
     });
 
-    const topPack = hPositions.slice(0, Math.min(5, hPositions.length));
+    const leaderProgress = sorted[0]?.progress ?? 0;
+    const focusCount = leaderProgress > 0.84 ? 3 : 5;
+    const topPack = hPositions.slice(0, Math.min(focusCount, hPositions.length));
     const avgX = topPack.reduce((s, h) => s + h.x, 0) / topPack.length;
     const avgY = topPack.reduce((s, h) => s + h.y, 0) / topPack.length;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    hPositions.forEach(h => { minX = Math.min(minX, h.x); maxX = Math.max(maxX, h.x); minY = Math.min(minY, h.y); maxY = Math.max(maxY, h.y); });
+    topPack.forEach(h => { minX = Math.min(minX, h.x); maxX = Math.max(maxX, h.x); minY = Math.min(minY, h.y); maxY = Math.max(maxY, h.y); });
     const spread = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
     const targetZoom = Math.min(1.2, Math.max(0.4, 1800 / (spread + 800)));
 
-    cameraRef.current.x = lerp(cameraRef.current.x, avgX, 0.08);
-    cameraRef.current.y = lerp(cameraRef.current.y, avgY, 0.08);
-    cameraRef.current.zoom = lerp(cameraRef.current.zoom, targetZoom, 0.04);
+    const dt = Math.min(0.05, Math.max(0.001, lastFrameTimeRef.current === null ? 1 / 60 : (time - lastFrameTimeRef.current) / 1000));
+    lastFrameTimeRef.current = time;
+    const positionAlpha = 1 - Math.exp(-5.0 * dt);
+    const zoomAlpha = 1 - Math.exp(-2.5 * dt);
+    cameraRef.current.x = lerp(cameraRef.current.x, avgX, positionAlpha);
+    cameraRef.current.y = lerp(cameraRef.current.y, avgY, positionAlpha);
+    cameraRef.current.zoom = lerp(cameraRef.current.zoom, targetZoom, zoomAlpha);
 
     ctx.save();
     const fc = raceData?.field_condition || '良';
@@ -492,6 +559,12 @@ export default function RacePhase() {
     if (allFinished && !doneRef.current) {
       doneRef.current = true;
 
+      if (sim.presentation?.photoFinish?.enabled) {
+        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+        startPhotoReview();
+        return;
+      }
+
       setTimeout(() => {
         isFinishedRef.current = true;
         if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -507,13 +580,15 @@ export default function RacePhase() {
       return;
     }
     rafRef.current = requestAnimationFrame(loop);
-  }, [addLog, handleNext, raceData?.field_condition]);
+  }, [addLog, handleNext, raceData?.field_condition, startPhotoReview]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(loop);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (nextTimerRef.current) clearTimeout(nextTimerRef.current);
+      photoTimersRef.current.forEach(clearTimeout);
+      photoTimersRef.current = [];
     };
   }, [loop]);
 
@@ -532,6 +607,23 @@ export default function RacePhase() {
     if (!rankings.length) return totalDist;
     return Math.max(0, Math.round(totalDist * (1 - rankings[0].progress)));
   }, [rankings, raceData?.distance]);
+
+  const photoPlan = raceData?.simulation?.presentation?.photoFinish;
+  const photoPending = !!photoPlan?.enabled && ['waiting', 'review'].includes(photoPhase);
+  const contenderSet = new Set<number>(photoPlan?.contenderHorseNumbers || []);
+  const displayedRankings = photoPending
+    ? [...rankings].sort((a, b) => {
+        const aContender = contenderSet.has(a.hn);
+        const bContender = contenderSet.has(b.hn);
+        if (aContender && bContender) return a.hn - b.hn;
+        if (aContender) return -1;
+        if (bContender) return 1;
+        return b.progress - a.progress;
+      })
+    : rankings;
+  const photoResults = (raceData?.simulation?.results || []).slice(0, 2);
+  const photoFrameCount = photoPlan?.frameCount || 7;
+  const photoT = photoFrameCount <= 1 ? 1 : photoFrame / (photoFrameCount - 1);
 
   return (
     <div className="h-screen flex flex-col bg-[#0c100c] text-white overflow-hidden relative font-sans">
@@ -571,10 +663,66 @@ export default function RacePhase() {
             </div>
           )}
 
-          {countdown > 0 && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-1000">
-              <div className="text-[120px] font-black text-yellow-500 animate-pulse drop-shadow-[0_0_30px_rgba(234,179,8,0.5)]">{countdown}</div>
-              <div className="text-xl font-bold tracking-[0.5em] text-white/60 uppercase -mt-4">Ready</div>
+          {(countdown > 0 || gateOpening) && (
+            <div className="absolute inset-0 z-30 overflow-hidden bg-gradient-to-b from-[#203a25] via-[#355a35] to-[#897554]">
+              <div className="absolute inset-x-0 bottom-0 h-[42%] bg-[#b39a73] border-t-4 border-white/30" />
+              <div className="absolute top-5 right-6 min-w-24 rounded-xl bg-black/65 border border-white/15 px-5 py-3 text-center">
+                <div className="text-[10px] text-gray-300 font-black tracking-[0.25em]">START</div>
+                <div className="text-5xl leading-none font-black text-yellow-400 tabular-nums">{Math.max(0, countdown)}</div>
+              </div>
+              <div className="absolute inset-x-5 bottom-[20%] flex justify-center">
+                <div className="flex max-w-full overflow-hidden border-4 border-[#c9d0cc] bg-[#39443f] shadow-2xl">
+                  {horses.slice(0, 18).map((horse, index) => (
+                    <div key={horse.horse_number} className="relative w-12 md:w-14 h-24 border-r border-white/20 last:border-r-0 flex items-end justify-center pb-3">
+                      <div className="absolute inset-x-1 top-1 h-5 bg-[#212a26] text-[9px] text-white/70 font-black flex items-center justify-center">{index + 1}</div>
+                      <div className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-[11px] text-white font-black" style={{ background: HORSE_COLORS[horse.horse_number - 1] || '#777' }}>
+                        {horse.horse_number}
+                      </div>
+                      <div className={`absolute inset-y-0 left-0 w-1/2 bg-[#65736d]/90 border-r border-white/20 transition-transform duration-700 ${gateOpening ? '-translate-x-full' : ''}`} />
+                      <div className={`absolute inset-y-0 right-0 w-1/2 bg-[#65736d]/90 border-l border-white/20 transition-transform duration-700 ${gateOpening ? 'translate-x-full' : ''}`} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="absolute left-1/2 -translate-x-1/2 top-[18%] text-center">
+                <div className="text-sm md:text-lg text-white font-black tracking-[0.35em] drop-shadow-lg">
+                  {gateOpening ? 'スタート！' : countdown <= 2 ? 'FANFARE' : '各馬ゲートイン'}
+                </div>
+                <div className="mt-2 text-[11px] text-white/70 font-bold">
+                  {gateOpening ? 'ゲートが開きました' : countdown <= 2 ? 'まもなく発走します' : '発走準備が進んでいます'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {photoPlan?.enabled && ['waiting', 'review', 'reveal'].includes(photoPhase) && (
+            <div className="absolute inset-0 z-50 bg-[#111514]/90 flex items-center justify-center p-6">
+              <div className="w-full max-w-3xl">
+                <div className="text-center mb-5">
+                  <div className="text-[11px] tracking-[0.4em] text-gray-400 font-black">PHOTO FINISH</div>
+                  <div className="mt-2 text-2xl md:text-3xl text-white font-black">
+                    {photoPhase === 'waiting' ? '1着・2着 写真判定中' : photoPhase === 'review' ? `判定映像 ${photoFrame + 1}/${photoFrameCount}` : '判定結果'}
+                  </div>
+                </div>
+                <div className="relative h-56 bg-[#b39a73] border-y-4 border-white/30 overflow-hidden">
+                  <div className="absolute top-0 bottom-0 left-[68%] w-1 bg-white" />
+                  <div className="absolute top-2 bottom-2 left-[68%] border-l border-dashed border-black/50" />
+                  {photoResults.map((result: any, index: number) => {
+                    const gapPixels = Math.min(18, Math.max(3, Number(photoPlan.rawGapSeconds || 0.05) * 45));
+                    const finishX = 68 + (index === 0 ? 2 : 2 - gapPixels / 10);
+                    const x = 18 + (finishX - 18) * (photoPhase === 'waiting' ? 0.15 : photoT);
+                    return (
+                      <div key={result.horse_number} className="absolute flex items-center gap-3 transition-none" style={{ left: `${x}%`, top: index === 0 ? '28%' : '62%', transform: 'translate(-50%, -50%)' }}>
+                        <div className="w-10 h-10 rounded-full border-3 border-white flex items-center justify-center text-white font-black" style={{ background: HORSE_COLORS[result.horse_number - 1] || '#777' }}>{result.horse_number}</div>
+                        <div className="whitespace-nowrap bg-black/60 px-3 py-1 rounded text-xs text-white font-bold">{result.horse_name}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-5 text-center text-sm text-gray-300 font-bold">
+                  {photoPhase === 'waiting' ? '全馬の入線を待っています' : photoPhase === 'review' ? 'ゴール直前を一コマずつ確認しています' : `こっちだ！ ${photoResults[0]?.horse_number}番 ${photoResults[0]?.horse_name}！`}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -585,7 +733,7 @@ export default function RacePhase() {
             <div className="text-[10px] text-gray-500 uppercase font-black tracking-widest opacity-50">Real-time Ranking</div>
           </div>
           <div className="flex-1 relative overflow-hidden">
-            {rankings.map((r, i) => {
+            {displayedRankings.map((r, i) => {
               const currentRank = i + 1;
               const isOvertaking = r.prevRank !== undefined && currentRank < r.prevRank;
               const isConfirmed = r.confirmed;
@@ -599,10 +747,12 @@ export default function RacePhase() {
                     isOvertaking ? 'bg-indigo-500 border-white scale-[1.12] shadow-[0_0_30px_rgba(99,102,241,0.8)] brightness-125' :
                       'bg-black/60 border-white/10'
                     }`}>
-                    <span className={`w-4 font-mono font-black text-xs text-center ${i < 3 ? 'text-yellow-400' : 'text-gray-300'}`}>{i + 1}</span>
+                    <span className={`w-4 font-mono font-black text-xs text-center ${i < 3 ? 'text-yellow-400' : 'text-gray-300'}`}>{photoPending && contenderSet.has(r.hn) ? '?' : i + 1}</span>
                     <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black text-white shrink-0 shadow-xl border border-white/20" style={{ background: HORSE_COLORS[r.hn - 1], boxShadow: isOvertaking ? `0 0 20px ${HORSE_COLORS[r.hn - 1]}` : '' }}>{r.hn}</div>
                     <span className="flex-1 font-black text-xs truncate text-white drop-shadow-sm">{r.name}</span>
-                    {isConfirmed
+                    {photoPending && contenderSet.has(r.hn)
+                      ? <div className="text-[9px] font-mono text-amber-300 font-black">判定待ち</div>
+                      : isConfirmed
                       ? <div className="text-[9px] font-mono text-yellow-400 font-black">確定</div>
                       : <div className="text-[9px] font-mono text-gray-200 font-bold">{(r.progress * 100).toFixed(0)}%</div>
                     }

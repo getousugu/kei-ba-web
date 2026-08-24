@@ -5,6 +5,7 @@ import {
   DISTANCE_CATEGORIES,
   MARGINS,
 } from './constants';
+import { buildRacePresentation } from './race_presentation';
 
 function gauss(mean: number, std: number): number {
   let u = 0, v = 0;
@@ -119,6 +120,7 @@ export class RaceSimulator {
     }
 
     const results = this._calcFinalResults(simHorses, finishedAt, distance, fieldCondition);
+    const presentation = buildRacePresentation(results, stagesData);
 
     return {
       stages:    stagesData,
@@ -126,6 +128,7 @@ export class RaceSimulator {
       events:    eventsAll,
       pace,
       base_time: this._baseTime(distance, fieldCondition),
+      presentation,
     };
   }
 
@@ -525,6 +528,7 @@ export class RaceSimulator {
     const firstAt = sorted[0].fAt;
     const results: any[] = [];
     let prevTime: number | null = null;
+    let prevFinishAt: number | null = null;
 
     for (let i = 0; i < sorted.length; i++) {
       const { hn, fAt } = sorted[i];
@@ -542,9 +546,13 @@ export class RaceSimulator {
         jockey_name:   h.jockey_name,
         running_style: h.running_style,
         finish_time:   finishTime,
+        raw_finish_at: fAt,
+        raw_gap_seconds: diff * 14.0,
+        raw_gap_from_previous_seconds: prevFinishAt === null ? 0 : (fAt - prevFinishAt) * 14.0,
         margin:        i === 0 ? '────' : this._margin(finishTime - prevTime!),
       });
       prevTime = finishTime;
+      prevFinishAt = fAt;
     }
     return results;
   }

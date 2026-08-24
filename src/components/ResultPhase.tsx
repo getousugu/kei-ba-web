@@ -4,6 +4,7 @@ import { peerManager } from '../network/peerManager';
 import { oddsCalculator } from '../core/odds_calculator';
 import { HORSE_COLORS } from '../core/constants';
 import { db, checkRetirement } from '../db/db';
+import RaceReplayModal from './RaceReplayModal';
 
 const MEDAL = ['🥇', '🥈', '🥉'];
 
@@ -38,6 +39,7 @@ export default function ResultPhase() {
   const [hasCashedOut, setHasCashedOut] = useState(false);
   const [win5Message, setWin5Message] = useState<string | null>(null);
   const [showSurviveEffect, setShowSurviveEffect] = useState(false);
+  const [showReplay, setShowReplay] = useState(false);
 
   const simulation = raceData?.simulation;
   const results: any[] = simulation?.results || [];
@@ -492,6 +494,9 @@ export default function ResultPhase() {
 
   return (
     <div className="h-screen flex flex-col bg-[#111113] text-gray-200 overflow-hidden" style={{ fontSize: 13 }}>
+      {showReplay && simulation && (
+        <RaceReplayModal simulation={simulation} horses={horses} onClose={() => setShowReplay(false)} />
+      )}
       {/* ── WIN5 Survive Flash ── */}
       {showSurviveEffect && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center pointer-events-none overflow-hidden">
@@ -544,6 +549,13 @@ export default function ResultPhase() {
             </div>
           )}
         </div>
+
+        <button
+          onClick={() => setShowReplay(true)}
+          className="ml-auto mr-3 px-4 py-2 bg-indigo-800/60 hover:bg-indigo-700 text-indigo-100 font-bold text-xs rounded-lg transition-all"
+        >
+          ▶ ハイライトをリプレイ
+        </button>
 
         {/* Host actions */}
         {role === 'host' && (
