@@ -11,6 +11,7 @@
     "typecheck:server": "tsc -p server/tsconfig.json",
     "deploy:server": "wrangler deploy",
     "deploy:server:test": "wrangler deploy --name kei-ba-central-dev",
+    "deploy:web": "wrangler deploy --config wrangler.web.jsonc",
     "lint": "eslint .",
     "preview": "vite preview"
   },
