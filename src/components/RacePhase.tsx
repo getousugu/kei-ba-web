@@ -90,8 +90,21 @@ function createRaceRenderFrame({
   };
 }
 
-export default function RacePhase() {
-  const { horses, raceData, role, sessionHorseWins, lastWinnerHN } = useGameStore();
+interface RacePhaseProps {
+  horses?: any[];
+  raceData?: any;
+  raceStartTime?: number;
+  onComplete?: () => void;
+}
+
+export default function RacePhase(props: RacePhaseProps = {}) {
+  const game = useGameStore();
+  const centralPlayback = !!props.raceData;
+  const horses = props.horses ?? game.horses;
+  const raceData = props.raceData ?? game.raceData;
+  const role = centralPlayback ? 'host' : game.role;
+  const sessionHorseWins = centralPlayback ? {} : game.sessionHorseWins;
+  const lastWinnerHN = centralPlayback ? null : game.lastWinnerHN;
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [countdown, setCountdown] = useState(3);
@@ -162,9 +175,13 @@ export default function RacePhase() {
   }, []);
 
   const handleNext = useCallback(() => {
+    if (centralPlayback) {
+      props.onComplete?.();
+      return;
+    }
     peerManager.broadcast({ type: 'phase_start', phase: 'result' });
     useGameStore.getState().setPhase('result');
-  }, []);
+  }, [centralPlayback, props.onComplete]);
 
   const toggleSelectedHorse = useCallback((horseNumber: number) => {
     setSelectedHorses(current => {
@@ -211,11 +228,11 @@ export default function RacePhase() {
       isFinishedRef.current = true;
       setIsFinished(true);
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-      if (useGameStore.getState().role === 'host') {
+      if (centralPlayback || useGameStore.getState().role === 'host') {
         nextTimerRef.current = setTimeout(handleNext, 1400);
       }
     }, revealAt + 1800));
-  }, [addLog, handleNext]);
+  }, [addLog, centralPlayback, handleNext]);
 
   const loop = useCallback((time: number) => {
     const canvas = canvasRef.current;
@@ -227,7 +244,7 @@ export default function RacePhase() {
     const H = canvas.height;
 
     // 全プレイヤーで共通の絶対時刻を基準にする。ローカル fallback は使わない
-    const raceStart = useGameStore.getState().raceStartTime;
+    const raceStart = props.raceStartTime ?? useGameStore.getState().raceStartTime;
     if (!raceStart) { rafRef.current = requestAnimationFrame(loopRef.current); return; }
     const now = Date.now();
     const elapsed = now - raceStart;
@@ -311,7 +328,7 @@ export default function RacePhase() {
       setTelop('規定時間超過によりレース終了');
       addLog('⏳ 規定時間超過によりレース終了');
 
-      if (useGameStore.getState().role === 'host') {
+      if (centralPlayback || useGameStore.getState().role === 'host') {
         nextTimerRef.current = setTimeout(() => {
           handleNext();
         }, 3000);
@@ -691,7 +708,7 @@ export default function RacePhase() {
         if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
         setIsFinished(true);
 
-        if (useGameStore.getState().role === 'host') {
+        if (centralPlayback || useGameStore.getState().role === 'host') {
           nextTimerRef.current = setTimeout(() => {
             handleNext();
           }, 500);
@@ -701,7 +718,7 @@ export default function RacePhase() {
       return;
     }
     rafRef.current = requestAnimationFrame(loopRef.current);
-  }, [addLog, handleNext, lastWinnerHN, raceData?.distance, raceData?.field_condition, sessionHorseWins, startPhotoReview]);
+  }, [addLog, centralPlayback, handleNext, lastWinnerHN, props.raceStartTime, raceData?.distance, raceData?.field_condition, sessionHorseWins, startPhotoReview]);
 
   useEffect(() => {
     loopRef.current = loop;
@@ -906,7 +923,7 @@ export default function RacePhase() {
               <span className="text-5xl">🥇</span>
               <div className="text-left"><div className="text-gray-500 text-xs uppercase tracking-widest font-bold">1st Place</div><div className="text-4xl font-black text-white">{rankings[0]?.name}</div></div>
             </div>
-            {useGameStore.getState().role === 'guest' && (
+            {!centralPlayback && useGameStore.getState().role === 'guest' && (
               <div className="mt-8 text-[11px] text-gray-400 font-black tracking-[0.2em] animate-pulse">
                 ホストが結果発表へ進むまでお待ちください...
               </div>

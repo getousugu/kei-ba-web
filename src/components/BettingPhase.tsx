@@ -24,11 +24,39 @@ function BlockBar({ value }: { value: number }) {
   );
 }
 
-export default function BettingPhase() {
-  const { 
-    horses, raceData, role, myCoins, myBets, addBet, chatMessages, addChatMessage, 
-    bettingEndTime, isSpectator, roomSettings, win5Data, setWin5Data, sessionHorseWins
-  } = useGameStore();
+export interface CentralBettingAdapter {
+  horses: any[];
+  raceData: any;
+  balance: number;
+  bets: Bet[];
+  bettingEndTime: number;
+  onPurchase: (betType: string, combinations: number[][], amount: number) => Promise<void>;
+  onCancel: (bet: Bet) => Promise<void>;
+  onExit: () => void;
+  participants: number;
+  win5Participants: number;
+  serverOffsetMs: number;
+}
+
+export default function BettingPhase({ central }: { central?: CentralBettingAdapter } = {}) {
+  const game = useGameStore();
+  const {
+    horses: roomHorses, raceData: roomRaceData, role: roomRole, myCoins: roomCoins, myBets: roomBets,
+    bettingEndTime: roomBettingEndTime, isSpectator: roomIsSpectator, roomSettings: roomRoomSettings,
+    win5Data: roomWin5Data, sessionHorseWins: roomSessionHorseWins,
+    addBet, chatMessages, addChatMessage, setWin5Data
+  } = game;
+  const horses = central?.horses ?? roomHorses;
+  const raceData = central?.raceData ?? roomRaceData;
+  const role = central ? 'guest' : roomRole;
+  const myCoins = central?.balance ?? roomCoins;
+  const myBets = central?.bets ?? roomBets;
+  const bettingEndTime = central?.bettingEndTime ?? roomBettingEndTime;
+  const isSpectator = central ? false : roomIsSpectator;
+  const roomSettings = central ? { ...roomRoomSettings, npcEnabled: false } : roomRoomSettings;
+  const win5Data = central ? null : roomWin5Data;
+  const sessionHorseWins = central ? {} : roomSessionHorseWins;
+  const currentTime = () => Date.now() + (central?.serverOffsetMs ?? 0);
 
   const [betType, setBetType] = useState(BET_TYPES[0]);
   const [buyMode, setBuyMode] = useState<'通常' | 'ボックス' | '流し'>('通常');
@@ -94,7 +122,7 @@ export default function BettingPhase() {
     if (role !== 'host' || !roomSettings.npcEnabled || !bettingEndTime || isTransitioning) return;
 
     const npcInterval = setInterval(async () => {
-      const now = Date.now();
+      const now = currentTime();
       if (now >= bettingEndTime) return;
 
       if (Math.random() > 0.4) { // 60% chance every 2s
@@ -149,7 +177,7 @@ export default function BettingPhase() {
   const resetAndSetMode = (m: '通常' | 'ボックス' | '流し') => { setBuyMode(m); setSelected([]); };
   const resetAndSetType = (t: string) => { setBetType(t); setSelected([]); };
 
-  const isBettingClosed = () => bettingEndTime !== null && Date.now() >= bettingEndTime;
+  const isBettingClosed = () => bettingEndTime !== null && currentTime() >= bettingEndTime;
 
   const isWin5Active = win5Data?.isActive;
   const isSurvivor = win5Data?.survivors.includes(peerManager.myPeerId || '');
@@ -196,9 +224,20 @@ export default function BettingPhase() {
   const effectiveBetAmount = betType === 'WIN5' ? 0 : (betAmount || 100);
   const totalCost = combos.length * effectiveBetAmount;
 
-  const handlePurchase = () => {
+  const handlePurchase = async () => {
     if (isBettingClosed() || !combos.length || totalCost > myCoins) return;
     if (betType !== 'WIN5' && effectiveBetAmount <= 0) return;
+    if (central) {
+      try {
+        await central.onPurchase(betType, combos, effectiveBetAmount);
+        setFeedback(`✓ ${combos.length}点購入`);
+        setTimeout(() => setFeedback(''), 2500);
+        setSelected([]);
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : '購入に失敗しました');
+      }
+      return;
+    }
     if (betType === 'WIN5' && hasAlreadyBetWin5) {
       alert('WIN5は1レースにつき1枚しか購入できません');
       return;
@@ -254,8 +293,17 @@ export default function BettingPhase() {
     setSelected([]);
   };
 
-  const handleCancelBet = (bet: Bet) => {
+  const handleCancelBet = async (bet: Bet) => {
     if (isBettingClosed() || bet.bet_type === 'WIN5') return;
+    if (central) {
+      try {
+        await central.onCancel(bet);
+        setFeedback('✓ 馬券をキャンセルしました');
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : 'キャンセルに失敗しました');
+      }
+      return;
+    }
     const newCoins = myCoins + bet.amount;
     useGameStore.getState().setMyCoins(newCoins);
     useGameStore.getState().removeBet(bet.id);
@@ -340,6 +388,12 @@ export default function BettingPhase() {
               <div className="text-[10px] text-gray-400 font-bold">残高</div>
               <div className="font-mono font-black text-yellow-500 tabular text-sm">{myCoins.toLocaleString()} C</div>
             </div>
+            {central && (
+              <>
+                <div className="text-[10px] font-black text-emerald-400">参加者 {central.participants}人 / WIN5 {central.win5Participants}人</div>
+                <button onClick={central.onExit} className="px-4 py-1.5 rounded border border-[#3a3a44] font-bold text-xs text-gray-300 hover:bg-white/5">退出</button>
+              </>
+            )}
             {role === 'host' && (
               <button onClick={startRace} disabled={isTransitioning} className="px-4 py-1.5 rounded font-bold text-xs transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20">
                 {isTransitioning ? '最終計算中...' : 'レース開始'}

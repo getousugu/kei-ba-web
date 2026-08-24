@@ -44,7 +44,14 @@ export interface CentralRaceSummary {
 export interface CentralRace extends CentralRaceSummary {
   horses: CentralHorse[];
   conditions: { distance: number; fieldCondition: string; weather: string; courseFeature: string };
-  simulation?: { results?: Array<{ horse_number: number; horse_name?: string; time?: number; margin?: string }> };
+  simulation?: {
+    distance?: number;
+    field_condition?: string;
+    weather?: string;
+    course_feature?: string;
+    results?: Array<{ horse_number: number; horse_name?: string; time?: number; margin?: string }>;
+    [key: string]: unknown;
+  };
 }
 
 export interface CentralBet {
