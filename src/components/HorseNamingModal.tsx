@@ -46,6 +46,7 @@ export default function HorseNamingModal({ onClose }: HorseNamingModalProps) {
       weight_change,
       record: { wins: 0, places: 0, shows: 0, losses: 0 },
       rating: rarity === 'Legendary' ? 1600 : rarity === 'Epic' ? 1400 : 1200,
+      central_earnings: 0,
       total_races: 0,
       wins: 0,
       is_permanent: true,

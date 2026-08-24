@@ -32,6 +32,7 @@ export interface HorseRecord {
   weight?: number;
   weight_change?: number;
   rating?: number;
+  central_earnings?: number;
   record?: any;
   total_races: number;
   wins: number;
@@ -102,6 +103,7 @@ export async function ensureHorsePool(targetSize = 100): Promise<void> {
       weight_change,
       record,
       rating: h.rating || 1000,
+      central_earnings: 0,
       total_races: 0,
       wins: 0,
     });

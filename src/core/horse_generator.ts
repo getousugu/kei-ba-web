@@ -261,6 +261,7 @@ export class HorseGenerator {
       running_style,
       condition,
       rating: ratingMap[rarity] || 1000,
+      central_earnings: 0,
       total_races: 0,
       wins: 0,
       ...stats,
@@ -294,4 +295,3 @@ export class HorseGenerator {
 }
 
 export const horseGenerator = new HorseGenerator();
-

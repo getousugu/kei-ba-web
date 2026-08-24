@@ -16,6 +16,8 @@ export interface HorseData {
   field_apt: Record<string, string>;
   condition: string;
   rating?: number;
+  /** 中央競馬場で馬自身が獲得した、使用不能な通算賞金 */
+  central_earnings?: number;
   total_races?: number;
   wins?: number;
   score?: number;

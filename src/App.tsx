@@ -664,7 +664,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     ['発走', '決まった実時間に発走'],
-                    ['出走馬', '中央の大規模馬プールから選出'],
+                    ['出走馬', '最大1,000頭の中央馬プールから選出'],
                     ['演出', '常時ON'],
                     ['設定', '基本はおまかせ'],
                   ].map(([label, value]) => (
@@ -680,7 +680,7 @@ export default function App() {
                   <div className="mt-3 flex items-center justify-between text-[11px] font-black text-gray-300">
                     <span className="rounded-lg bg-white/5 px-3 py-2">中央競馬場</span>
                     <span className="text-gray-700">›</span>
-                    <span className="rounded-lg bg-white/5 px-3 py-2">パドック</span>
+                    <span className="rounded-lg bg-white/5 px-3 py-2">パドック（構想中）</span>
                     <span className="text-gray-700">›</span>
                     <span className="rounded-lg bg-white/5 px-3 py-2">馬券受付</span>
                   </div>

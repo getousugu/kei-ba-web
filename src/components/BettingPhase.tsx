@@ -559,11 +559,19 @@ export default function BettingPhase() {
 
                 <div className="pl-4 pr-3 py-3">
                   {/* Header */}
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="text-lg leading-none pt-0.5">🐴</span>
-                    <span className="font-black text-white text-[16px]">
-                      {h.horse_number}番 {h.name} <span className="text-gray-300 font-bold text-[13px] ml-1">({h.age || 4}歳 {h.gender || '牡'} {h.coat_color || '栗毛'})</span>
-                    </span>
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-1.5 min-w-0 pt-0.5">
+                      <span className="text-lg leading-none shrink-0">🐴</span>
+                      <span className="font-black text-white text-[16px] leading-tight">
+                        {h.horse_number}番 {h.name} <span className="text-gray-300 font-bold text-[13px] ml-1">({h.age || 4}歳 {h.gender || '牡'} {h.coat_color || '栗毛'})</span>
+                      </span>
+                    </div>
+                    <div className="shrink-0 rounded-lg border border-amber-400/15 bg-amber-400/5 px-2.5 py-1.5 text-right">
+                      <div className="text-[8px] font-black tracking-widest text-amber-500/60">獲得賞金</div>
+                      <div className="mt-0.5 font-mono text-[11px] font-black tabular-nums text-amber-200">
+                        {(h.central_earnings || 0).toLocaleString()} C
+                      </div>
+                    </div>
                   </div>
 
                   {/* Jockey */}
