@@ -6,6 +6,7 @@ import { HORSE_COLORS } from '../core/constants';
 
 const STAGE_DUR = 2500;  // Time per simulation stage (ms)
 const MAX_COUNTDOWN = 5; // カウントダウン上限 (= raceStartTime バッファと揃える)
+const GATE_OPEN_DUR = 750; // Keep race progress at zero until the gate transition is complete
 const GOAL_STAGE_DUR = 5000; // Extra time for the final stretch
 type PhotoPhase = 'none' | 'waiting' | 'review' | 'reveal' | 'complete';
 
@@ -61,7 +62,9 @@ export default function RacePhase() {
 
   const horsesRef = useRef(horses);
   const simRef = useRef(raceData?.simulation);
-  const cameraRef = useRef({ x: 0, y: 0, zoom: 0.8 });
+  // The race begins at the bottom of the oval (0, 800), moving to the right.
+  // Start the camera there so the gate view and first race frame connect cleanly.
+  const cameraRef = useRef({ x: 0, y: 800, zoom: 1.1 });
 
   useEffect(() => { horsesRef.current = horses; }, [horses]);
   useEffect(() => { simRef.current = raceData?.simulation; }, [raceData?.simulation]);
@@ -171,7 +174,7 @@ export default function RacePhase() {
         if (!gateOpenTriggeredRef.current) {
           gateOpenTriggeredRef.current = true;
           setGateOpening(true);
-          photoTimersRef.current.push(setTimeout(() => setGateOpening(false), 750));
+          photoTimersRef.current.push(setTimeout(() => setGateOpening(false), GATE_OPEN_DUR));
         }
       }
     }
@@ -193,18 +196,21 @@ export default function RacePhase() {
       return;
     }
 
+    // The first frame of the race must be the same position shown in the gate.
+    // Do not let the hidden simulation advance while the doors are opening.
+    const raceElapsed = Math.max(0, elapsed - GATE_OPEN_DUR);
     const totalDur = (sim.stages.length - 1) * STAGE_DUR + GOAL_STAGE_DUR;
-    const done = elapsed >= totalDur;
+    const done = raceElapsed >= totalDur;
 
-    const isGoalStage = elapsed >= (sim.stages.length - 1) * STAGE_DUR;
-    const stageIdx = isGoalStage ? sim.stages.length - 1 : Math.floor(elapsed / STAGE_DUR);
+    const isGoalStage = raceElapsed >= (sim.stages.length - 1) * STAGE_DUR;
+    const stageIdx = isGoalStage ? sim.stages.length - 1 : Math.floor(raceElapsed / STAGE_DUR);
 
     let stageProg = 0;
     if (isGoalStage) {
-      const stageElapsed = elapsed - (sim.stages.length - 1) * STAGE_DUR;
+      const stageElapsed = raceElapsed - (sim.stages.length - 1) * STAGE_DUR;
       stageProg = Math.min(1.0, stageElapsed / GOAL_STAGE_DUR);
     } else {
-      stageProg = (elapsed % STAGE_DUR) / STAGE_DUR;
+      stageProg = (raceElapsed % STAGE_DUR) / STAGE_DUR;
     }
 
     if (stageIdx !== lastStageRef.current) {
@@ -664,27 +670,30 @@ export default function RacePhase() {
           )}
 
           {(countdown > 0 || gateOpening) && (
-            <div className="absolute inset-0 z-30 overflow-hidden bg-gradient-to-b from-[#203a25] via-[#355a35] to-[#897554]">
-              <div className="absolute inset-x-0 bottom-0 h-[42%] bg-[#b39a73] border-t-4 border-white/30" />
+            <div className="absolute inset-0 z-30 overflow-hidden bg-[#1a3a1a]">
+              {/* Top-down start area: same viewpoint and direction as the race canvas. */}
+              <div className="absolute inset-x-0 top-[12%] bottom-[12%] bg-[#b39a73] border-y-4 border-white/25" />
+              <div className="absolute top-[12%] bottom-[12%] left-1/2 w-1 bg-white/85 shadow-[0_0_0_1px_rgba(0,0,0,0.2)]" />
+              <div className="absolute top-[12%] bottom-[12%] left-1/2 border-l border-dashed border-black/45" />
               <div className="absolute top-5 right-6 min-w-24 rounded-xl bg-black/65 border border-white/15 px-5 py-3 text-center">
                 <div className="text-[10px] text-gray-300 font-black tracking-[0.25em]">START</div>
                 <div className="text-5xl leading-none font-black text-yellow-400 tabular-nums">{Math.max(0, countdown)}</div>
               </div>
-              <div className="absolute inset-x-5 bottom-[20%] flex justify-center">
-                <div className="flex max-w-full overflow-hidden border-4 border-[#c9d0cc] bg-[#39443f] shadow-2xl">
+              <div className="absolute left-[44%] top-1/2 -translate-x-1/2 -translate-y-1/2">
+                <div className="flex flex-col border-4 border-[#c9d0cc] bg-[#39443f] shadow-2xl">
                   {horses.slice(0, 18).map((horse, index) => (
-                    <div key={horse.horse_number} className="relative w-12 md:w-14 h-24 border-r border-white/20 last:border-r-0 flex items-end justify-center pb-3">
-                      <div className="absolute inset-x-1 top-1 h-5 bg-[#212a26] text-[9px] text-white/70 font-black flex items-center justify-center">{index + 1}</div>
-                      <div className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-[11px] text-white font-black" style={{ background: HORSE_COLORS[horse.horse_number - 1] || '#777' }}>
+                    <div key={horse.horse_number} className="relative w-24 h-9 border-b border-white/20 last:border-b-0 flex items-center justify-center">
+                      <div className="absolute left-1 inset-y-1 w-5 bg-[#212a26] text-[9px] text-white/70 font-black flex items-center justify-center">{index + 1}</div>
+                      <div className={`w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-[11px] text-white font-black transition-transform duration-700 ease-out ${gateOpening ? 'translate-x-16' : ''}`} style={{ background: HORSE_COLORS[horse.horse_number - 1] || '#777' }}>
                         {horse.horse_number}
                       </div>
-                      <div className={`absolute inset-y-0 left-0 w-1/2 bg-[#65736d]/90 border-r border-white/20 transition-transform duration-700 ${gateOpening ? '-translate-x-full' : ''}`} />
-                      <div className={`absolute inset-y-0 right-0 w-1/2 bg-[#65736d]/90 border-l border-white/20 transition-transform duration-700 ${gateOpening ? 'translate-x-full' : ''}`} />
+                      <div className={`absolute right-0 top-0 h-1/2 w-2 bg-[#83908a] border-b border-white/30 origin-top transition-transform duration-500 ${gateOpening ? '-rotate-90' : ''}`} />
+                      <div className={`absolute right-0 bottom-0 h-1/2 w-2 bg-[#83908a] border-t border-white/30 origin-bottom transition-transform duration-500 ${gateOpening ? 'rotate-90' : ''}`} />
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="absolute left-1/2 -translate-x-1/2 top-[18%] text-center">
+              <div className="absolute left-6 top-7 text-left">
                 <div className="text-sm md:text-lg text-white font-black tracking-[0.35em] drop-shadow-lg">
                   {gateOpening ? 'スタート！' : countdown <= 2 ? 'FANFARE' : '各馬ゲートイン'}
                 </div>
