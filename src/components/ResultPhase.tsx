@@ -197,8 +197,25 @@ export default function ResultPhase({ central }: { central?: CentralResultAdapte
       s.unlockTitle('trifecta_master');
     }
 
+    const ticketTitles: Record<string, string> = {
+      '複勝': 'place_master',
+      '馬連': 'quinella_master',
+      'ワイド': 'wide_master',
+      '馬単': 'exacta_master',
+      '3連複': 'trio_master',
+    };
+    hitDetails.forEach(detail => {
+      const titleId = detail.isHit ? ticketTitles[detail.bet_type] : undefined;
+      if (titleId) s.unlockTitle(titleId);
+    });
+
     const hitBetTypes = new Set(hitDetails.filter(d => d.isHit).map(d => d.bet_type));
     if (hitBetTypes.size >= 3) s.unlockTitle('clean_sweep');
+    if (hitBetTypes.size >= 5) s.unlockTitle('five_type_sweep');
+
+    const regularTickets = hitDetails.filter(d => d.bet_type !== 'WIN5');
+    if (regularTickets.length >= 3 && regularTickets.every(d => d.isHit)) s.unlockTitle('perfect_card');
+    if (regularTickets.length === 1 && regularTickets[0].isHit) s.unlockTitle('one_shot');
 
     const winnerNumber = results[0]?.horse_number;
     const middleStage = (simulation?.stages || []).reduce((nearest: any, stage: any) => {
@@ -238,17 +255,21 @@ export default function ResultPhase({ central }: { central?: CentralResultAdapte
     else if (sessionTotalBet >= 100000) s.unlockTitle('high_roller');
     else if (sessionTotalBet >= 10000) s.unlockTitle('gambler');
 
+    if (newStats.totalWins >= 5) s.unlockTitle('steady');
     if (newStats.totalWins >= 20) s.unlockTitle('winner_20');
-    else if (newStats.totalWins >= 5) s.unlockTitle('steady');
+    if (newStats.totalWins >= 50) s.unlockTitle('winner_50');
+    if (newStats.totalWins >= 100) s.unlockTitle('winner_100');
 
     if (newStats.totalPayout >= 50000000) s.unlockTitle('whale');
     else if (newStats.totalPayout >= 10000000) s.unlockTitle('god_of_gambling');
     else if (newStats.totalPayout >= 1000000) s.unlockTitle('legend');
 
+    if (newStats.totalRaces >= 7) s.unlockTitle('lucky_seven');
+    if (newStats.totalRaces >= 10) s.unlockTitle('seeker');
+    if (newStats.totalRaces >= 50) s.unlockTitle('veteran');
     if (newStats.totalRaces >= 100) s.unlockTitle('centaur');
-    else if (newStats.totalRaces >= 50) s.unlockTitle('veteran');
-    else if (newStats.totalRaces >= 10) s.unlockTitle('seeker');
-    else if (newStats.totalRaces >= 7) s.unlockTitle('lucky_seven');
+    if (newStats.totalRaces >= 250) s.unlockTitle('race_250');
+    if (newStats.totalRaces >= 500) s.unlockTitle('race_500');
 
     if (newStats.totalRaces - newStats.totalWins >= 20) s.unlockTitle('unlucky_streak');
     else if (newStats.totalRaces - newStats.totalWins >= 10) s.unlockTitle('loser');

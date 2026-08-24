@@ -8,6 +8,7 @@ import RacePhase from './components/RacePhase';
 import ResultPhase from './components/ResultPhase';
 import HorseNamingModal from './components/HorseNamingModal';
 import CentralRacecoursePhase from './components/CentralRacecoursePhase';
+import HowToPlayModal from './components/HowToPlayModal';
 import { fetchCentralStatus, type CentralStatus } from './network/centralServer';
 
 import { TITLES } from './core/constants';
@@ -26,6 +27,7 @@ export default function App() {
   const [showPatchNotes, setShowPatchNotes] = useState(false);
   const [showHorseNaming, setShowHorseNaming] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [showCentralRacecourse, setShowCentralRacecourse] = useState(false);
   const [centralRacecourseActive, setCentralRacecourseActive] = useState(false);
   const [centralStatus, setCentralStatus] = useState<CentralStatus | null>(null);
@@ -76,7 +78,8 @@ export default function App() {
     };
 
     refresh();
-    const timer = window.setInterval(refresh, 10_000);
+    // 入口の概要表示は秒単位の精度を必要としない。DB負荷を抑えるため30秒間隔にする。
+    const timer = window.setInterval(refresh, 30_000);
     return () => {
       controller.abort();
       window.clearInterval(timer);
@@ -223,6 +226,19 @@ export default function App() {
                 <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" /><path d="M12 7v5l3 3" /></svg>
                 {sidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest animate-fade-in">Management</span>}
               </div>
+
+              <button
+                onClick={() => {
+                  setShowHowToPlay(true);
+                  if (!sidebarOpen) setSidebarOpen(true);
+                }}
+                className={`flex items-center gap-3 p-3 rounded-xl transition-all ${showHowToPlay ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 text-gray-400 hover:bg-white/10'} ${!sidebarOpen && 'justify-center w-10 h-10 p-0'}`}
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M9.1 9a3 3 0 115.4 1.8c-.9.7-1.5 1.2-1.5 2.7M12 22a10 10 0 100-20 10 10 0 000 20z" />
+                </svg>
+                {sidebarOpen && <span className="text-xs font-black uppercase tracking-tighter">遊び方</span>}
+              </button>
 
               <button
                 onClick={() => {
@@ -548,6 +564,9 @@ export default function App() {
                       '中央競馬場でも通常レースと同じ馬券購入・レース映像・結果画面を使用。発走後はレースを最後まで再生してから、確定着順・払戻・馬券明細を表示します。',
                       '中央競馬にG1・G2・G3・一般競走を導入。毎時00分にG1を開催し、馬ごとの中央獲得賞金と出走条件・選出率・賞金加算を実装。',
                       'ホーム画面に中央競馬場への入口とクイック参加の準備表示を追加。馬カード右上に中央獲得賞金を表示しつつ、従来のカードサイズを維持。',
+                      'サイドバーに、通常ルーム・馬券・レース観戦・中央競馬・WIN5までを説明する詳細な「遊び方」を追加。',
+                      '券種別の的中、完全的中、通算記録などに対応する称号を12種追加し、全66種に拡充。',
+                      '中央競馬場の状態確認と馬数集計を軽量化し、サーバーDBの読み取り消費を大幅に削減。',
                     ]
                   },
                   {
@@ -668,6 +687,10 @@ export default function App() {
             <svg className={`w-4 h-4 transition-transform ${showPatchNotes ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 9l6 6 6-6" /></svg>
           </button>
         </div>
+        {showHowToPlay && (
+          <HowToPlayModal onClose={() => setShowHowToPlay(false)} />
+        )}
+
         {/* Horse Naming Modal */}
         {showHorseNaming && (
           <HorseNamingModal onClose={() => setShowHorseNaming(false)} />

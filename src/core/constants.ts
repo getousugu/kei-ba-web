@@ -134,6 +134,18 @@ export const TITLES: TitleDefinition[] = [
   { id: 'bank_robber', name: '銀行強盗', description: '1レースで1,000,000C以上の払い戻しを受けた', color: 'text-red-500' },
   { id: 'payout_10m', name: '伝説の投資家', description: '所持金が10,000,000Cを超えた', color: 'text-amber-300' },
   { id: 'payout_100m', name: '神の領域', description: '所持金が100,000,000Cを超えた', color: 'text-yellow-200' },
+  { id: 'place_master', name: '複勝の教科書', description: '複勝を的中させた', color: 'text-lime-400' },
+  { id: 'quinella_master', name: '馬連の結び手', description: '馬連を的中させた', color: 'text-cyan-400' },
+  { id: 'wide_master', name: 'ワイドな視野', description: 'ワイドを的中させた', color: 'text-sky-400' },
+  { id: 'exacta_master', name: '馬単の指揮者', description: '馬単を着順どおりに的中させた', color: 'text-blue-400' },
+  { id: 'trio_master', name: '三連複の調律師', description: '3連複を的中させた', color: 'text-purple-400' },
+  { id: 'perfect_card', name: '完全的中', description: '1レースで3枚以上購入し、すべて的中させた', color: 'text-yellow-300' },
+  { id: 'one_shot', name: '一券入魂', description: '1レースで馬券を1枚だけ購入し、的中させた', color: 'text-orange-400' },
+  { id: 'five_type_sweep', name: '七券流・五段', description: '1レースで5種類以上の券種を的中させた', color: 'text-fuchsia-400' },
+  { id: 'winner_50', name: '的中の名手', description: '通算50回以上的中させた', color: 'text-emerald-300' },
+  { id: 'winner_100', name: '百発の予想家', description: '通算100回以上的中させた', color: 'text-yellow-200' },
+  { id: 'race_250', name: '競馬場の住人', description: '通算250レース以上参加した', color: 'text-indigo-300' },
+  { id: 'race_500', name: '半千の目撃者', description: '通算500レース以上参加した', color: 'text-rose-300' },
 ];
 // horse_generator が必要とする定数
 // (元々 constants.ts になかったため horse_generator の import エラーになっていた)
