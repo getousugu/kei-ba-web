@@ -91,34 +91,78 @@ function drawHorse(ctx: CanvasRenderingContext2D, horse: RenderHorse, frame: Moc
   ctx.rotate(p.rotation);
   ctx.translate(gateOffset, 0);
 
-  const bob = frame.phase === 'race' || frame.phase === 'final' ? Math.sin(now * 0.018 + horse.number) * 1.4 : 0;
+  const running = frame.phase === 'race' || frame.phase === 'final';
+  const cycle = now * 0.024 + horse.number * 0.83;
+  const bob = running ? Math.sin(cycle * 2) * 1.15 : 0;
   ctx.translate(0, bob);
+
+  // A long directional shadow reinforces head-to-tail orientation.
   ctx.fillStyle = 'rgba(0,0,0,.28)';
-  ctx.beginPath(); ctx.ellipse(-2, 5, 23, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-1, 6, 31, 9, 0, 0, Math.PI * 2); ctx.fill();
 
   if (selected === horse.number) {
     ctx.strokeStyle = '#ffd44a';
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(0, 0, 29, 20, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(1, 0, 36, 19, 0, 0, Math.PI * 2); ctx.stroke();
   }
 
-  ctx.fillStyle = '#3b251b';
-  ctx.beginPath(); ctx.ellipse(0, 0, 20, 9, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(19, -2, 6, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#2a1711'; ctx.lineWidth = 3;
-  const leg = Math.sin(now * 0.026 + horse.number) * 5;
-  ctx.beginPath(); ctx.moveTo(-9, 5); ctx.lineTo(-14 + leg, 12); ctx.moveTo(6, 5); ctx.lineTo(11 - leg, 12); ctx.stroke();
+  const coats = ['#44271b', '#5a3422', '#34241f', '#6a4028', '#2d2522'];
+  const coat = coats[(horse.number - 1) % coats.length];
+  const darkCoat = horse.number % 3 === 0 ? '#221714' : '#2b1a14';
+  const stride = running ? Math.sin(cycle) * 7 : 0;
 
-  ctx.fillStyle = horse.color;
-  ctx.beginPath(); ctx.arc(-1, -7, 8, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  // Tail: two tapered strokes trailing behind the rump.
+  ctx.strokeStyle = darkCoat;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(-22, -2); ctx.quadraticCurveTo(-29, -7, -35, -4 + Math.sin(cycle) * 2); ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-23, 2); ctx.quadraticCurveTo(-30, 5, -34, 1 + Math.sin(cycle + 1) * 2); ctx.stroke();
 
-  ctx.fillStyle = '#121416';
-  roundedRect(ctx, -11, -4, 16, 12, 3); ctx.fill();
+  // Legs stay close to the body in a top-down view and cycle front-to-back.
+  ctx.strokeStyle = darkCoat;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-11, -6); ctx.lineTo(-18 - stride, -7);
+  ctx.moveTo(-10, 6); ctx.lineTo(-18 + stride, 7);
+  ctx.moveTo(11, -6); ctx.lineTo(18 + stride, -7);
+  ctx.moveTo(10, 6); ctx.lineTo(18 - stride, 7);
+  ctx.stroke();
+
+  // Rump, barrel, raised neck and distinct head form one readable horse silhouette.
+  ctx.fillStyle = coat;
+  ctx.beginPath(); ctx.ellipse(-3, 0, 22, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(10, -7); ctx.quadraticCurveTo(17, -12, 22, -8); ctx.lineTo(25, 1); ctx.lineTo(12, 6); ctx.closePath(); ctx.fill();
+  ctx.save();
+  ctx.translate(26, -6);
+  ctx.rotate(-0.18);
+  ctx.beginPath(); ctx.ellipse(0, 0, 9, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = darkCoat;
+  ctx.beginPath(); ctx.ellipse(7, 1, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = coat;
+  ctx.beginPath(); ctx.moveTo(-4, -4); ctx.lineTo(-5, -10); ctx.lineTo(0, -5); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(2, -4); ctx.lineTo(4, -9); ctx.lineTo(6, -3); ctx.fill();
+  ctx.fillStyle = '#0b0908'; ctx.beginPath(); ctx.arc(2, -1, 1.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Saddlecloth and a small forward-leaning jockey, instead of a large circular marker.
+  ctx.fillStyle = '#111519';
+  roundedRect(ctx, -11, -7, 17, 14, 3); ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.font = '800 9px system-ui';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(String(horse.number), -3, 2);
+  ctx.fillText(String(horse.number), -2.5, 0.5);
+
+  ctx.fillStyle = horse.color;
+  ctx.beginPath(); ctx.ellipse(3, 0, 8, 6, -0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#f4f4f0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(1, -4); ctx.lineTo(10, -5); ctx.moveTo(1, 4); ctx.lineTo(10, 5); ctx.stroke();
+  ctx.fillStyle = horse.color;
+  ctx.beginPath(); ctx.arc(10, -1, 4.5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.strokeStyle = '#181818'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(12, 2); ctx.lineTo(19, 1); ctx.stroke();
   ctx.restore();
 
   if ((frame.phase === 'race' || frame.phase === 'final' || frame.phase === 'photo') && (horse.rank === 1 || selected === horse.number)) {
