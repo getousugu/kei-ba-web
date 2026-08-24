@@ -24,6 +24,7 @@ export default function App() {
   const [showPatchNotes, setShowPatchNotes] = useState(false);
   const [showHorseNaming, setShowHorseNaming] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showCentralRacecourse, setShowCentralRacecourse] = useState(false);
   const [historyItems, setHistoryItems] = useState<any[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -443,6 +444,43 @@ export default function App() {
                       参加
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    disabled
+                    aria-label="クイック参加（準備中）"
+                    className="w-full py-3.5 rounded-2xl border border-[#34343c] bg-[#202025] text-gray-500 font-black text-sm tracking-[0.12em] cursor-not-allowed flex items-center justify-center gap-3"
+                  >
+                    <svg className="w-4 h-4 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z" /></svg>
+                    クイック参加
+                    <span className="text-[8px] px-2 py-0.5 rounded-full border border-gray-600/50 bg-black/20 tracking-widest">準備中</span>
+                  </button>
+
+                  <div className="relative py-1">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-amber-500/15" /></div>
+                    <div className="relative flex justify-center"><span className="px-3 bg-[#16161a] text-amber-500/50 text-[9px] font-black tracking-[0.2em]">OFFICIAL RACECOURSE</span></div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!playerName.trim()) {
+                        alert('名前を入力してください');
+                        return;
+                      }
+                      setShowCentralRacecourse(true);
+                    }}
+                    className="group w-full py-4 px-5 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-500/10 via-yellow-300/10 to-amber-500/10 hover:border-amber-300/60 hover:from-amber-500/20 hover:to-amber-500/20 transition-all shadow-lg shadow-amber-950/20 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="w-9 h-9 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-lg">🏇</span>
+                      <span className="text-left">
+                        <span className="block text-sm font-black text-amber-100 tracking-[0.12em]">中央競馬場へ</span>
+                        <span className="block text-[9px] text-amber-500/60 font-bold mt-0.5">定時開催の公式オンラインレース</span>
+                      </span>
+                    </span>
+                    <svg className="w-4 h-4 text-amber-400/70 group-hover:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m9 18 6-6-6-6" /></svg>
+                  </button>
                 </div>
               </div>
 
@@ -600,6 +638,70 @@ export default function App() {
         {/* Horse Naming Modal */}
         {showHorseNaming && (
           <HorseNamingModal onClose={() => setShowHorseNaming(false)} />
+        )}
+
+        {showCentralRacecourse && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-5 animate-fade-in">
+            <button
+              type="button"
+              aria-label="閉じる"
+              className="absolute inset-0 bg-black/85 backdrop-blur-md"
+              onClick={() => setShowCentralRacecourse(false)}
+            />
+            <div className="relative w-full max-w-lg overflow-hidden rounded-[28px] border border-amber-400/25 bg-[#131316] shadow-2xl shadow-amber-950/40">
+              <div className="border-b border-amber-400/15 bg-gradient-to-r from-amber-500/10 via-yellow-300/5 to-transparent p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[9px] font-black tracking-[0.28em] text-amber-500/70">CENTRAL RACECOURSE</div>
+                    <h2 className="mt-1 text-2xl font-black tracking-tight text-white">中央競馬場</h2>
+                    <p className="mt-2 text-xs font-bold leading-relaxed text-gray-400">常時開催される、サーバー管理の公式レースです。</p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-gray-700 bg-black/30 px-3 py-1 text-[9px] font-black tracking-widest text-gray-500">接続準備中</span>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    ['発走', '決まった実時間に発走'],
+                    ['出走馬', '中央の大規模馬プールから選出'],
+                    ['演出', '常時ON'],
+                    ['設定', '基本はおまかせ'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-2xl border border-white/5 bg-white/[0.025] p-4">
+                      <div className="text-[9px] font-black tracking-widest text-gray-600">{label}</div>
+                      <div className="mt-1 text-[11px] font-bold leading-relaxed text-gray-200">{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-indigo-400/15 bg-indigo-500/5 p-4">
+                  <div className="text-[10px] font-black tracking-widest text-indigo-300">参加の流れ</div>
+                  <div className="mt-3 flex items-center justify-between text-[11px] font-black text-gray-300">
+                    <span className="rounded-lg bg-white/5 px-3 py-2">中央競馬場</span>
+                    <span className="text-gray-700">›</span>
+                    <span className="rounded-lg bg-white/5 px-3 py-2">パドック</span>
+                    <span className="text-gray-700">›</span>
+                    <span className="rounded-lg bg-white/5 px-3 py-2">馬券受付</span>
+                  </div>
+                  <p className="mt-3 text-[10px] font-bold leading-relaxed text-gray-500">参加中のプレイヤーが名付けた馬も、低確率で出走候補に選ばれます。締切はサーバーの発走時刻を基準にします。</p>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-xl border border-emerald-400/10 bg-emerald-500/5 px-4 py-3">
+                  <span className="text-[10px] font-bold text-gray-400">上部に参加者数・WIN5参加人数を常時表示</span>
+                  <span className="text-[9px] font-black text-emerald-400/70">WIN5 常時開催</span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled
+                  className="mt-5 w-full rounded-2xl border border-[#34343c] bg-[#202025] py-3.5 text-xs font-black tracking-[0.16em] text-gray-500 cursor-not-allowed"
+                >
+                  サーバー接続後に開場します
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Race History Overlay */}
