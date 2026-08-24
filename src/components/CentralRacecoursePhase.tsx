@@ -5,14 +5,10 @@ import ResultPhase from './ResultPhase';
 import type { Bet } from '../core/odds_calculator';
 import {
   acknowledgeCentralSettlements,
-  fetchCentralMe,
   fetchCentralRace,
-  fetchCentralStatus,
-  fetchNextCentralRace,
-  heartbeatCentral,
-  joinCentral,
   leaveCentral,
   replaceCentralBets,
+  syncCentral,
   type CentralBet,
   type CentralMe,
   type CentralRace,
@@ -41,7 +37,13 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
   const loadedResultIdsRef = useRef(new Set<string>());
   const syncingRef = useRef(false);
   const playbackRef = useRef<typeof playback>(null);
+  const raceRef = useRef<typeof race>(null);
+  const recentResultRef = useRef<typeof recentResult>(null);
+  const serverOffsetRef = useRef(0);
   useEffect(() => { playbackRef.current = playback; }, [playback]);
+  useEffect(() => { raceRef.current = race; }, [race]);
+  useEffect(() => { recentResultRef.current = recentResult; }, [recentResult]);
+  useEffect(() => { serverOffsetRef.current = serverOffsetMs; }, [serverOffsetMs]);
 
   const completePlayback = useCallback(() => {
     const completed = playbackRef.current;
@@ -56,15 +58,15 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
     setPlayback({ race: finished, startsAt: Date.now() + 3_000 });
   }, []);
 
-  const sync = useCallback(async (signal?: AbortSignal, first = false) => {
+  const sync = useCallback(async (signal?: AbortSignal) => {
     if (syncingRef.current) return;
     syncingRef.current = true;
     try {
-      if (first) await joinCentral(playerName, signal);
-      else await heartbeatCentral(playerName, signal);
-      const [nextRace, nextMe, nextStatus] = await Promise.all([
-        fetchNextCentralRace(signal), fetchCentralMe(signal), fetchCentralStatus(signal),
-      ]);
+      const snapshot = await syncCentral(playerName, signal);
+      const { race: nextRace, me: nextMe, status: nextStatus } = snapshot;
+
+      // レース・結果表示中は参加維持だけ行い、背景の馬券画面を再描画しない。
+      if (playbackRef.current || recentResultRef.current) return;
 
       const previousRaceId = raceIdRef.current;
       if (previousRaceId && previousRaceId !== nextRace.id) {
@@ -75,10 +77,21 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
       }
 
       raceIdRef.current = nextRace.id;
-      setRace(nextRace);
-      setMe(nextMe);
-      setStatus(nextStatus);
-      setServerOffsetMs(nextStatus.serverTime - Date.now());
+      setRace((current) => current?.id === nextRace.id ? current : nextRace);
+      setMe((current) => {
+        if (!current) return nextMe;
+        const currentKey = JSON.stringify([current.balance, current.tickets, current.settlements]);
+        const nextKey = JSON.stringify([nextMe.balance, nextMe.tickets, nextMe.settlements]);
+        return currentKey === nextKey ? current : nextMe;
+      });
+      setStatus((current) => current
+        && current.participants === nextStatus.participants
+        && current.win5Participants === nextStatus.win5Participants
+        && current.horsePool.current === nextStatus.horsePool.current
+        && current.nextRace.id === nextStatus.nextRace.id
+        ? current : nextStatus);
+      const nextOffset = nextStatus.serverTime - Date.now();
+      setServerOffsetMs((current) => Math.abs(current - nextOffset) >= 250 ? nextOffset : current);
       setMessage('');
 
       const pending = nextMe.settlements[0];
@@ -115,11 +128,49 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
 
   useEffect(() => {
     const controller = new AbortController();
-    queueMicrotask(() => void sync(controller.signal, true));
-    const poll = window.setInterval(() => void sync(controller.signal), 2_000);
+    let timer: number | null = null;
+    let running = false;
+    const schedule = () => {
+      if (controller.signal.aborted) return;
+      const activeRace = raceRef.current;
+      const serverNow = Date.now() + serverOffsetRef.current;
+      const untilStart = activeRace ? activeRace.startAt - serverNow : Number.POSITIVE_INFINITY;
+      const delay = document.visibilityState === 'hidden'
+        ? 30_000
+        : playbackRef.current || recentResultRef.current
+          ? 30_000
+          : untilStart <= 15_000 && untilStart >= -12_000
+            ? 1_000
+            : 10_000;
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => void run(), delay);
+    };
+    const run = async () => {
+      if (running || controller.signal.aborted) return;
+      running = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      try {
+        await sync(controller.signal);
+      } finally {
+        running = false;
+        schedule();
+      }
+    };
+    const syncOnFocus = () => {
+      if (document.visibilityState !== 'visible') return;
+      void run();
+    };
+    queueMicrotask(() => void run());
+    document.addEventListener('visibilitychange', syncOnFocus);
+    window.addEventListener('focus', syncOnFocus);
     return () => {
       controller.abort();
-      window.clearInterval(poll);
+      if (timer !== null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', syncOnFocus);
+      window.removeEventListener('focus', syncOnFocus);
       void leaveCentral().catch(() => undefined);
     };
   }, [sync]);
@@ -146,7 +197,15 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
   const acknowledge = async (item: CentralSettlement) => {
     await acknowledgeCentralSettlements([item.id]);
     setMe((current) => current ? { ...current, settlements: current.settlements.filter((entry) => entry.id !== item.id) } : current);
+    recentResultRef.current = null;
     setRecentResult(null);
+    await sync();
+  };
+
+  const closeResult = async () => {
+    recentResultRef.current = null;
+    setRecentResult(null);
+    await sync();
   };
 
   if (!race || !me) {
@@ -210,7 +269,7 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
         betDetails: (settlement?.details.bets ?? []).map((bet) => ({ id: bet.id, bet_type: bet.betType, horse_numbers: bet.horseNumbers, amount: bet.amount, isHit: bet.isHit, payout: bet.payout, payoutOdds: bet.payoutOdds })),
         balance: me.balance,
         payout: settlement?.amount ?? 0,
-        onNext: () => settlement ? acknowledge(settlement) : setRecentResult(null),
+        onNext: () => settlement ? acknowledge(settlement) : closeResult(),
       }}/></div>}
     </div>
   );

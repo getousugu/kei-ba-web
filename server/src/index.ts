@@ -637,6 +637,49 @@ export class CentralRacecourse extends DurableObject<Env> {
     return Number(row?.balance || 0);
   }
 
+  private playerState(playerId: string, now: number) {
+    const balance = this.ensureAccount(playerId, now);
+    const tickets = this.ctx.storage.sql.exec<SqlRow>(
+      "SELECT race_id, bets_json, reserved_amount, status, updated_at FROM tickets WHERE player_id = ? AND status = 'active' ORDER BY updated_at DESC",
+      playerId
+    ).toArray().map((row) => ({
+      raceId: String(row.race_id),
+      bets: JSON.parse(String(row.bets_json)) as CentralBet[],
+      reservedAmount: Number(row.reserved_amount),
+      status: String(row.status),
+      updatedAt: Number(row.updated_at)
+    }));
+    const settlements = this.ctx.storage.sql.exec<SqlRow>(
+      'SELECT * FROM settlements WHERE player_id = ? AND acknowledged = 0 ORDER BY created_at ASC',
+      playerId
+    ).toArray().map((row) => ({
+      id: String(row.id),
+      raceId: String(row.race_id),
+      kind: String(row.kind),
+      amount: Number(row.amount),
+      details: JSON.parse(String(row.details_json)),
+      createdAt: Number(row.created_at)
+    }));
+    return { ok: true as const, serverTime: now, balance, tickets, settlements };
+  }
+
+  private touchPlayer(player: { id: string; name: string }, now: number, win5Active: boolean, namedHorseName: string | null): void {
+    this.ctx.storage.sql.exec(
+      `INSERT INTO players (id, name, last_seen, win5_active, named_horse_name)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         last_seen = excluded.last_seen,
+         win5_active = excluded.win5_active,
+         named_horse_name = excluded.named_horse_name`,
+      player.id,
+      player.name,
+      now,
+      win5Active ? 1 : 0,
+      namedHorseName
+    );
+  }
+
   private validateBets(value: unknown, horses: CentralHorse[]): CentralBet[] | null {
     if (!Array.isArray(value) || value.length > 100) return null;
     const validHorseNumbers = new Set(horses.map((horse) => horse.horse_number));
@@ -674,6 +717,33 @@ export class CentralRacecourse extends DurableObject<Env> {
     const now = Date.now();
     this.settleDueRaces(now);
 
+    if (request.method === 'POST' && url.pathname === '/api/central/sync') {
+      const body = await this.readBody(request);
+      const player = this.validPlayer(body);
+      if (!player) return json({ ok: false, error: 'invalid_player' }, { status: 400 });
+      const namedHorseName = typeof body.namedHorseName === 'string' ? body.namedHorseName.trim().slice(0, 24) : null;
+      this.touchPlayer(player, now, body.win5Active === true, namedHorseName);
+
+      const counts = this.activeCounts(now);
+      const race = this.ensureRace(nextRaceStart(now));
+      const me = this.playerState(player.id, now);
+      return json({
+        ok: true,
+        serverTime: now,
+        race,
+        me,
+        status: {
+          ok: true,
+          serverTime: now,
+          participants: counts.players,
+          win5Participants: counts.win5,
+          horsePool: { current: this.horseCount(), target: INITIAL_POOL_SIZE, maximum: MAX_POOL_SIZE },
+          nextRace: { ...race, horses: undefined },
+          rules: { raceIntervalSeconds: RACE_INTERVAL_MS / 1_000, bettingSeconds: BETTING_TIME_MS / 1_000, g1EveryMinutes: 60 }
+        }
+      });
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/central/status') {
       const counts = this.activeCounts(now);
       const race = this.ensureRace(nextRaceStart(now));
@@ -702,51 +772,15 @@ export class CentralRacecourse extends DurableObject<Env> {
     if (request.method === 'GET' && url.pathname === '/api/central/me') {
       const playerId = this.validPlayerId(url.searchParams.get('playerId'));
       if (!playerId) return json({ ok: false, error: 'invalid_player' }, { status: 400 });
-      const balance = this.ensureAccount(playerId, now);
-      const tickets = this.ctx.storage.sql.exec<SqlRow>(
-        "SELECT race_id, bets_json, reserved_amount, status, updated_at FROM tickets WHERE player_id = ? AND status = 'active' ORDER BY updated_at DESC",
-        playerId
-      ).toArray().map((row) => ({
-        raceId: String(row.race_id),
-        bets: JSON.parse(String(row.bets_json)) as CentralBet[],
-        reservedAmount: Number(row.reserved_amount),
-        status: String(row.status),
-        updatedAt: Number(row.updated_at)
-      }));
-      const settlements = this.ctx.storage.sql.exec<SqlRow>(
-        'SELECT * FROM settlements WHERE player_id = ? AND acknowledged = 0 ORDER BY created_at ASC',
-        playerId
-      ).toArray().map((row) => ({
-        id: String(row.id),
-        raceId: String(row.race_id),
-        kind: String(row.kind),
-        amount: Number(row.amount),
-        details: JSON.parse(String(row.details_json)),
-        createdAt: Number(row.created_at)
-      }));
-      return json({ ok: true, serverTime: now, balance, tickets, settlements });
+      return json(this.playerState(playerId, now));
     }
 
     if (request.method === 'POST' && ['/api/central/join', '/api/central/heartbeat'].includes(url.pathname)) {
       const body = await this.readBody(request);
       const player = this.validPlayer(body);
       if (!player) return json({ ok: false, error: 'invalid_player' }, { status: 400 });
-      const win5Active = body.win5Active === true ? 1 : 0;
       const namedHorseName = typeof body.namedHorseName === 'string' ? body.namedHorseName.trim().slice(0, 24) : null;
-      this.ctx.storage.sql.exec(
-        `INSERT INTO players (id, name, last_seen, win5_active, named_horse_name)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           name = excluded.name,
-           last_seen = excluded.last_seen,
-           win5_active = excluded.win5_active,
-           named_horse_name = excluded.named_horse_name`,
-        player.id,
-        player.name,
-        now,
-        win5Active,
-        namedHorseName
-      );
+      this.touchPlayer(player, now, body.win5Active === true, namedHorseName);
       const balance = this.ensureAccount(player.id, now);
       const counts = this.activeCounts(now);
       return json({ ok: true, serverTime: now, participants: counts.players, win5Participants: counts.win5, balance });

@@ -92,6 +92,14 @@ export interface CentralStatus {
   rules: { raceIntervalSeconds: number; bettingSeconds: number; g1EveryMinutes: number };
 }
 
+export interface CentralSyncResponse {
+  ok: true;
+  serverTime: number;
+  race: CentralRace;
+  me: CentralMe;
+  status: CentralStatus;
+}
+
 const configuredBaseUrl = String(import.meta.env.VITE_CENTRAL_API_URL || '').replace(/\/$/, '');
 export const centralApiBaseUrl = configuredBaseUrl || (import.meta.env.DEV ? 'http://127.0.0.1:8787' : '');
 const PLAYER_ID_KEY = 'keiba_central_player_id';
@@ -144,6 +152,12 @@ export function joinCentral(playerName: string, signal?: AbortSignal) {
 
 export function heartbeatCentral(playerName: string, signal?: AbortSignal) {
   return post('/api/central/heartbeat', {
+    playerId: getCentralPlayerId(), playerName: playerName.trim() || 'ゲスト', win5Active: false
+  }, signal);
+}
+
+export function syncCentral(playerName: string, signal?: AbortSignal): Promise<CentralSyncResponse> {
+  return post('/api/central/sync', {
     playerId: getCentralPlayerId(), playerName: playerName.trim() || 'ゲスト', win5Active: false
   }, signal);
 }

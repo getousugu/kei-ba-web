@@ -4,8 +4,7 @@
   "main": "server/src/index.ts",
   "compatibility_date": "2026-08-24",
   "define": {
-    "import.meta.env.DEV": "false",
-    "import.meta.env.VITE_FORCE_PHOTO_FINISH": "\"false\""
+    "import.meta.env.DEV": "false"
   },
   "durable_objects": {
     "bindings": [
