@@ -6,6 +6,8 @@ import { oddsCalculator } from '../../src/core/odds_calculator';
 
 const ACTIVE_PLAYER_TTL_MS = 90_000;
 const RACE_INTERVAL_MS = 5 * 60_000;
+const DORMANT_RACE_INTERVAL_MS = RACE_INTERVAL_MS * 5;
+const MAX_DORMANT_RACES_PER_ALARM = 24;
 // 中央競馬場は常に次回レースを発売する。1枠前の発走と同時に次枠を開く。
 const BETTING_TIME_MS = RACE_INTERVAL_MS;
 const INITIAL_POOL_SIZE = 800;
@@ -129,6 +131,14 @@ function nextRaceStart(now: number): number {
   return (Math.floor(now / RACE_INTERVAL_MS) + 1) * RACE_INTERVAL_MS;
 }
 
+function retirementProbability(totalRaces: number): number {
+  if (totalRaces < 25) return 0;
+  if (totalRaces < 35) return 0.03;
+  if (totalRaces < 45) return 0.08;
+  if (totalRaces < 55) return 0.20;
+  return 0.50;
+}
+
 function createSeededRandom(seed: number): () => number {
   let value = seed | 0;
   return () => {
@@ -155,9 +165,12 @@ const JOCKEYS = jockeyNamesData.jockeys.map((jockey) => jockey.name);
 function uniqueHorseName(index: number): string {
   if (index < BASE_HORSE_NAMES.length) return BASE_HORSE_NAMES[index];
   const combination = index - BASE_HORSE_NAMES.length;
-  const prefix = PREFIXES[Math.floor(combination / SUFFIXES.length) % PREFIXES.length];
-  const suffix = SUFFIXES[combination % SUFFIXES.length];
-  return `${prefix}${suffix}`;
+  const combinationsPerGeneration = PREFIXES.length * SUFFIXES.length;
+  const generation = Math.floor(combination / combinationsPerGeneration);
+  const generationIndex = combination % combinationsPerGeneration;
+  const prefix = PREFIXES[Math.floor(generationIndex / SUFFIXES.length) % PREFIXES.length];
+  const suffix = SUFFIXES[generationIndex % SUFFIXES.length];
+  return generation === 0 ? `${prefix}${suffix}` : `${prefix}${suffix}${generation + 1}`;
 }
 
 function aptitudeMap(random: () => number, keys: string[]): Record<string, string> {
@@ -243,6 +256,23 @@ export class CentralRacecourse extends DurableObject<Env> {
         last_race_at INTEGER
       );
       CREATE INDEX IF NOT EXISTS horses_earnings ON horses (central_earnings DESC);
+      CREATE TABLE IF NOT EXISTS retired_horses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        original_horse_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        data TEXT NOT NULL,
+        central_earnings INTEGER NOT NULL,
+        total_races INTEGER NOT NULL,
+        wins INTEGER NOT NULL,
+        is_named_horse INTEGER NOT NULL DEFAULT 0,
+        owner_player_id TEXT,
+        retired_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS retired_horses_earnings ON retired_horses (central_earnings DESC);
+      CREATE TABLE IF NOT EXISTS central_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS players (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -293,6 +323,16 @@ export class CentralRacecourse extends DurableObject<Env> {
     `);
     this.ensureRaceColumn('conditions_json', "TEXT NOT NULL DEFAULT '{}'");
     this.ensureRaceColumn('simulation_json', 'TEXT');
+    this.ctx.storage.sql.exec(
+      'INSERT OR IGNORE INTO central_state (key, value) VALUES (?, ?)',
+      'last_background_check',
+      String(Date.now())
+    );
+    this.ctx.storage.sql.exec(
+      'INSERT OR IGNORE INTO central_state (key, value) VALUES (?, ?)',
+      'next_horse_index',
+      '0'
+    );
   }
 
   private ensureRaceColumn(name: string, definition: string): void {
@@ -307,15 +347,36 @@ export class CentralRacecourse extends DurableObject<Env> {
     return Number(rows[0]?.count || 0);
   }
 
+  private stateNumber(key: string, fallback: number): number {
+    const row = this.ctx.storage.sql.exec<{ value: string }>(
+      'SELECT value FROM central_state WHERE key = ?', key
+    ).toArray()[0];
+    const value = Number(row?.value);
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  private setStateNumber(key: string, value: number): void {
+    this.ctx.storage.sql.exec(
+      `INSERT INTO central_state (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      key,
+      String(Math.floor(value))
+    );
+  }
+
   private seedHorseBatch(batchSize: number): number {
     const before = this.horseCount();
     const target = Math.min(INITIAL_POOL_SIZE, before + batchSize);
     const existingNames = new Set(
-      this.ctx.storage.sql.exec<{ name: string }>('SELECT name FROM horses').toArray().map((row) => row.name)
+      [
+        ...this.ctx.storage.sql.exec<{ name: string }>('SELECT name FROM horses').toArray(),
+        ...this.ctx.storage.sql.exec<{ name: string }>('SELECT name FROM retired_horses').toArray()
+      ].map((row) => row.name)
     );
-    let sourceIndex = 0;
+    let activeCount = before;
+    let sourceIndex = this.stateNumber('next_horse_index', 0);
 
-    while (existingNames.size < target && sourceIndex < MAX_POOL_SIZE * 4) {
+    while (activeCount < target && sourceIndex < MAX_POOL_SIZE * 100) {
       const horse = generateHorse(sourceIndex);
       sourceIndex += 1;
       if (existingNames.has(horse.name)) continue;
@@ -327,7 +388,9 @@ export class CentralRacecourse extends DurableObject<Env> {
         JSON.stringify(horse)
       );
       existingNames.add(horse.name);
+      activeCount += 1;
     }
+    this.setStateNumber('next_horse_index', sourceIndex);
     return this.horseCount();
   }
 
@@ -340,9 +403,38 @@ export class CentralRacecourse extends DurableObject<Env> {
     if (this.horseCount() < INITIAL_POOL_SIZE) this.seedHorseBatch(SEED_BATCH_SIZE);
     const now = Date.now();
     this.settleDueRaces(now);
-    this.cleanupPlayers(now);
+    this.advanceDormantWorld(now);
     this.ctx.storage.sql.exec('DELETE FROM races WHERE start_at < ?', now - 24 * 60 * 60_000);
     await this.scheduleMaintenance();
+  }
+
+  private advanceDormantWorld(now: number): number {
+    const counts = this.activeCounts(now);
+    if (counts.players > 0) {
+      this.setStateNumber('last_background_check', now);
+      return 0;
+    }
+
+    const lastPlayerSeen = this.stateNumber('last_player_seen', 0);
+    const lastCheck = Math.max(
+      this.stateNumber('last_background_check', now),
+      lastPlayerSeen + ACTIVE_PLAYER_TTL_MS
+    );
+    let raceStart = (Math.floor(lastCheck / DORMANT_RACE_INTERVAL_MS) + 1) * DORMANT_RACE_INTERVAL_MS;
+    let processed = 0;
+
+    while (raceStart <= now && processed < MAX_DORMANT_RACES_PER_ALARM) {
+      const race = this.ensureRace(raceStart);
+      if (race.status !== 'qualification_pending') this.settleRace(race.id, now);
+      processed += 1;
+      raceStart += DORMANT_RACE_INTERVAL_MS;
+    }
+
+    this.setStateNumber(
+      'last_background_check',
+      raceStart <= now ? raceStart - DORMANT_RACE_INTERVAL_MS : now
+    );
+    return processed;
   }
 
   private cleanupPlayers(now: number): void {
@@ -530,6 +622,7 @@ export class CentralRacecourse extends DurableObject<Env> {
       G1: [1_000_000, 400_000, 200_000]
     };
 
+    let retiredCount = 0;
     this.ctx.storage.transactionSync(() => {
       const current = this.ctx.storage.sql.exec<{ status: string }>('SELECT status FROM races WHERE id = ?', raceId).toArray()[0];
       if (!current || current.status === 'finished') return;
@@ -554,6 +647,32 @@ export class CentralRacecourse extends DurableObject<Env> {
           now,
           horse.id
         );
+
+        const updated = this.ctx.storage.sql.exec<SqlRow>(
+          `SELECT id, name, data, central_earnings, total_races, wins,
+                  is_named_horse, owner_player_id
+           FROM horses WHERE id = ?`,
+          horse.id
+        ).toArray()[0];
+        if (updated && Math.random() < retirementProbability(Number(updated.total_races))) {
+          this.ctx.storage.sql.exec(
+            `INSERT INTO retired_horses
+              (original_horse_id, name, data, central_earnings, total_races, wins,
+               is_named_horse, owner_player_id, retired_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            Number(updated.id),
+            String(updated.name),
+            String(updated.data),
+            Number(updated.central_earnings),
+            Number(updated.total_races),
+            Number(updated.wins),
+            Number(updated.is_named_horse || 0),
+            updated.owner_player_id ? String(updated.owner_player_id) : null,
+            now
+          );
+          this.ctx.storage.sql.exec('DELETE FROM horses WHERE id = ?', horse.id);
+          retiredCount += 1;
+        }
       }
 
       const ticketRows = this.ctx.storage.sql.exec<SqlRow>(
@@ -599,6 +718,10 @@ export class CentralRacecourse extends DurableObject<Env> {
         );
       }
     });
+
+    if (retiredCount > 0) {
+      this.seedHorseBatch(Math.min(retiredCount, INITIAL_POOL_SIZE - this.horseCount()));
+    }
   }
 
   private async readBody(request: Request): Promise<Record<string, unknown>> {
@@ -678,6 +801,7 @@ export class CentralRacecourse extends DurableObject<Env> {
       win5Active ? 1 : 0,
       namedHorseName
     );
+    this.setStateNumber('last_player_seen', now);
   }
 
   private validateBets(value: unknown, horses: CentralHorse[]): CentralBet[] | null {
