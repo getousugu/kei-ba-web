@@ -8,6 +8,7 @@ export interface RaceData {
   field_condition?: string;
   weather?: string;
   course_feature?: string;
+  presentation_drama?: boolean;
   simulation?: any;
 }
 
@@ -38,6 +39,7 @@ export interface RoomSettings {
   courseFeature: string;
   hostMigration: boolean;
   realOdds: boolean;
+  raceDrama: boolean;
 }
 
 interface GameState {
@@ -166,6 +168,7 @@ export const useGameStore = create<GameState>((set) => ({
     courseFeature: 'random',
     hostMigration: true,
     realOdds: false,
+    raceDrama: true,
   },
   bettingEndTime: null,
   raceStartTime: null,

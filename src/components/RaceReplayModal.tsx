@@ -74,8 +74,16 @@ export default function RaceReplayModal({ simulation, horses, onClose }: Props) 
     const interpolation = stageIndex === 0 ? Math.max(0, (localProgress - 0.22) / 0.78) : localProgress;
     const rawRunners = horses.map((horse, rosterIndex) => {
       const hn = horse.horse_number;
-      const previous = previousStage?.positions_progress?.[hn] ?? previousStage?.positions_progress?.[String(hn)] ?? 0;
-      const current = currentStage.positions_progress?.[hn] ?? currentStage.positions_progress?.[String(hn)] ?? previous;
+      const previousRaw = previousStage?.positions_progress?.[hn] ?? previousStage?.positions_progress?.[String(hn)] ?? 0;
+      const currentRaw = currentStage.positions_progress?.[hn] ?? currentStage.positions_progress?.[String(hn)] ?? previousRaw;
+      const previousOffset = simulation.presentation?.visualOffsets?.[Math.max(0, stageIndex - 1)]?.[hn]
+        ?? simulation.presentation?.visualOffsets?.[Math.max(0, stageIndex - 1)]?.[String(hn)]
+        ?? 0;
+      const currentOffset = simulation.presentation?.visualOffsets?.[stageIndex]?.[hn]
+        ?? simulation.presentation?.visualOffsets?.[stageIndex]?.[String(hn)]
+        ?? 0;
+      const previous = previousRaw + previousOffset;
+      const current = currentRaw + currentOffset;
       const progress = gatePart ? 0 : lerp(previous, current, interpolation);
       const gateLane = rosterIndex - (horses.length - 1) / 2;
       const runningLane = gateLane * 0.38 + ((((hn * 7) % 9) - 4) * 0.045);

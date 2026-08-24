@@ -107,6 +107,7 @@ export default function RacePhase() {
   const [cameraMode, setCameraMode] = useState<CameraMode>('auto');
   const [selectedHorses, setSelectedHorses] = useState<number[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const commentaryIdRef = useRef(0);
 
   const rafRef = useRef<number | null>(null);
   const loopRef = useRef<(time: number) => void>(() => undefined);
@@ -155,7 +156,9 @@ export default function RacePhase() {
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commentary]);
 
   const addLog = useCallback((text: string, type?: string) => {
-    setCommentary(p => [...p, { id: Date.now() + Math.random(), text, type }].slice(-50));
+    commentaryIdRef.current += 1;
+    const id = Date.now() * 1000 + commentaryIdRef.current;
+    setCommentary(p => [...p, { id, text, type }].slice(-50));
   }, []);
 
   const handleNext = useCallback(() => {
@@ -347,6 +350,20 @@ export default function RacePhase() {
           setTimeout(() => setTelop(prev => prev === text ? '' : prev), 3000);
         }, i * 1000);
       });
+      const dramaMoment = sim.presentation?.dramaMoments?.find((moment: any) => moment.stageIndex === stageIdx);
+      if (dramaMoment) {
+        const dramaText = CommentaryGenerator.pick(dramaMoment.commentaryKey, {
+          name: dramaMoment.horseNames?.[0] || '一頭',
+        });
+        if (dramaText) {
+          const delay = Math.min(2200, newLines.length * 900);
+          setTimeout(() => {
+            setTelop(dramaText);
+            setTimeout(() => setTelop(prev => prev === dramaText ? '' : prev), 3000);
+          }, delay);
+          addLog(`🎬 ${dramaMoment.label}`);
+        }
+      }
 
        // Add plain status logs for special events
        (info.events || []).forEach((ev: any) => {
@@ -368,7 +385,11 @@ export default function RacePhase() {
       const getProg = (idx: number) => {
         const p = sim.stages[idx]?.positions_progress;
         if (!p) return 0;
-        return p[hn] ?? p[String(hn)] ?? 0;
+        const raw = p[hn] ?? p[String(hn)] ?? 0;
+        const displayOffset = sim.presentation?.visualOffsets?.[idx]?.[hn]
+          ?? sim.presentation?.visualOffsets?.[idx]?.[String(hn)]
+          ?? 0;
+        return raw + displayOffset;
       };
       const prev = stageIdx > 0 ? getProg(stageIdx - 1) : 0;
       const next = getProg(stageIdx);

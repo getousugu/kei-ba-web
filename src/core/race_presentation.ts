@@ -17,9 +17,23 @@ export interface RaceHighlight {
   importance: number;
 }
 
+export type DramaPattern = 'pack_compression' | 'late_charge' | 'escape_tension' | 'head_to_head' | 'second_wind';
+
+export interface DramaMoment {
+  stageIndex: number;
+  type: DramaPattern;
+  label: string;
+  commentaryKey: string;
+  horseNumbers: number[];
+  horseNames: string[];
+}
+
 export interface RacePresentationPlan {
   photoFinish: PhotoFinishPlan;
   highlights: RaceHighlight[];
+  dramaEnabled: boolean;
+  visualOffsets: Record<number, number>[];
+  dramaMoments: DramaMoment[];
 }
 
 const HIGHLIGHT_LABELS: Record<string, string> = {
@@ -36,6 +50,11 @@ const HIGHLIGHT_LABELS: Record<string, string> = {
   close_battle: '先頭争いが激化',
   big_move: '後方から一気',
   dominant_lead: '大きく抜け出す',
+  pack_compression: '馬群が凝縮',
+  late_charge: '後方から急浮上',
+  escape_tension: '逃げ馬がリード',
+  head_to_head: '二頭の叩き合い',
+  second_wind: 'もうひと伸び',
 };
 
 const HIGHLIGHT_WEIGHTS: Record<string, number> = {
@@ -53,6 +72,11 @@ const HIGHLIGHT_WEIGHTS: Record<string, number> = {
   dominant_lead: 50,
   good_start: 42,
   guts_display: 40,
+  pack_compression: 66,
+  late_charge: 84,
+  escape_tension: 62,
+  head_to_head: 88,
+  second_wind: 70,
 };
 
 function hashToUnit(value: string): number {
@@ -64,7 +88,88 @@ function hashToUnit(value: string): number {
   return (hash >>> 0) / 0xffffffff;
 }
 
-export function buildHighlights(stages: any[], photoFinish: boolean): RaceHighlight[] {
+function buildVisualDrama(stages: any[], enabled: boolean): {
+  visualOffsets: Record<number, number>[];
+  dramaMoments: DramaMoment[];
+} {
+  const visualOffsets = stages.map(() => ({} as Record<number, number>));
+  const dramaMoments: DramaMoment[] = [];
+  if (!enabled) return { visualOffsets, dramaMoments };
+
+  const addMoment = (stageIndex: number, type: DramaPattern, commentaryKey: string, horses: any[]) => {
+    if (dramaMoments.some(moment => moment.type === type && Math.abs(moment.stageIndex - stageIndex) <= 2)) return;
+    dramaMoments.push({
+      stageIndex,
+      type,
+      label: HIGHLIGHT_LABELS[type],
+      commentaryKey,
+      horseNumbers: horses.map(horse => Number(horse.horse_number)).filter(Number.isFinite).slice(0, 3),
+      horseNames: horses.map(horse => String(horse.horse_name || `${horse.horse_number}番`)).slice(0, 3),
+    });
+  };
+
+  stages.forEach((stage, stageIndex) => {
+    if (stageIndex === 0) return;
+    const order = stage.sorted_horses || [];
+    const previous = stages[stageIndex - 1]?.sorted_horses || [];
+    const leader = order[0];
+    const second = order[1];
+    const leaderProgress = Number(leader?.progress || 0);
+    // Every display offset is gone before the finish-frame buffer starts.
+    if (!leader || leaderProgress < 0.32 || leaderProgress >= 0.90) return;
+    const decay = leaderProgress <= 0.78 ? 1 : Math.max(0, (0.90 - leaderProgress) / 0.12);
+    const previousRanks = new Map<number, number>(previous.map((horse: any) => [Number(horse.horse_number), Number(horse.position)]));
+    const key = `${stageIndex}:${order.map((horse: any) => `${horse.horse_number}:${Number(horse.progress).toFixed(3)}`).join('|')}`;
+    const roll = hashToUnit(key);
+    const setOffset = (horseNumber: number, value: number) => {
+      visualOffsets[stageIndex][horseNumber] = Math.max(-0.01, Math.min(0.01, value * decay));
+    };
+
+    const mover = order
+      .map((horse: any) => ({ horse, gain: (previousRanks.get(Number(horse.horse_number)) || Number(horse.position)) - Number(horse.position) }))
+      .filter((item: any) => item.gain >= 2 && Number(item.horse.position) <= 7)
+      .sort((a: any, b: any) => b.gain - a.gain)[0];
+    const leadGap = second ? leaderProgress - Number(second.progress) : 1;
+    const eligiblePack = order.filter((horse: any) => leaderProgress - Number(horse.progress) <= 0.055);
+
+    if (mover && leaderProgress >= 0.58 && roll < 0.78) {
+      setOffset(Number(mover.horse.horse_number), 0.008);
+      addMoment(stageIndex, 'late_charge', 'DRAMA_LATE_CHARGE', [mover.horse]);
+      return;
+    }
+    if (second && leaderProgress >= 0.65 && leadGap <= 0.012 && roll < 0.86) {
+      const direction = hashToUnit(`${key}:duel`) < 0.5 ? -1 : 1;
+      setOffset(Number(leader.horse_number), direction * 0.0025);
+      setOffset(Number(second.horse_number), direction * -0.0025);
+      addMoment(stageIndex, 'head_to_head', 'DRAMA_HEAD_TO_HEAD', [leader, second]);
+      return;
+    }
+    if (leaderProgress <= 0.82 && eligiblePack.length >= 4 && roll < 0.68) {
+      eligiblePack.slice(1, 7).forEach((horse: any) => {
+        setOffset(Number(horse.horse_number), Math.min(0.008, (leaderProgress - Number(horse.progress)) * 0.22));
+      });
+      addMoment(stageIndex, 'pack_compression', 'DRAMA_PACK_COMPRESSION', eligiblePack.slice(0, 3));
+      return;
+    }
+    if (leaderProgress <= 0.76 && leadGap >= 0.025 && leadGap <= 0.070 && roll < 0.56) {
+      setOffset(Number(leader.horse_number), 0.006);
+      addMoment(stageIndex, 'escape_tension', 'DRAMA_ESCAPE_TENSION', [leader]);
+      return;
+    }
+    const fadingHorse = order.find((horse: any) => {
+      const previousRank = previousRanks.get(Number(horse.horse_number)) || Number(horse.position);
+      return Number(horse.position) <= 7 && Number(horse.position) - previousRank >= 2;
+    });
+    if (fadingHorse && leaderProgress >= 0.52 && roll < 0.44) {
+      setOffset(Number(fadingHorse.horse_number), 0.005);
+      addMoment(stageIndex, 'second_wind', 'DRAMA_SECOND_WIND', [fadingHorse]);
+    }
+  });
+
+  return { visualOffsets, dramaMoments };
+}
+
+export function buildHighlights(stages: any[], photoFinish: boolean, dramaMoments: DramaMoment[] = []): RaceHighlight[] {
   const candidates: RaceHighlight[] = [];
   const firstFinishIndex = stages.findIndex(stage => Number(stage.sorted_horses?.[0]?.progress || 0) >= 1);
   const finishStageIndex = firstFinishIndex >= 0 ? firstFinishIndex : Math.max(0, stages.length - 1);
@@ -125,6 +230,17 @@ export function buildHighlights(stages: any[], photoFinish: boolean): RaceHighli
     });
   });
 
+  dramaMoments.forEach(moment => {
+    candidates.push({
+      stageIndex: moment.stageIndex,
+      eventTypes: [moment.type],
+      label: moment.label,
+      description: moment.horseNames.join('・') || '演出場面',
+      horseNumbers: moment.horseNumbers,
+      importance: HIGHLIGHT_WEIGHTS[moment.type] || 60,
+    });
+  });
+
   const selected: RaceHighlight[] = [];
   [...candidates].sort((a, b) => b.importance - a.importance).forEach(candidate => {
     if (selected.length >= 5) return;
@@ -150,7 +266,7 @@ export function buildHighlights(stages: any[], photoFinish: boolean): RaceHighli
  * still plausible gap may be selected by the drama director; the official
  * winner continues to come from results[0].
  */
-export function buildRacePresentation(results: any[], stages: any[]): RacePresentationPlan {
+export function buildRacePresentation(results: any[], stages: any[], dramaEnabled = true): RacePresentationPlan {
   const first = results[0];
   const second = results[1];
   const rawGapSeconds = Number(second?.raw_gap_seconds ?? 999);
@@ -159,7 +275,7 @@ export function buildRacePresentation(results: any[], stages: any[]): RacePresen
   let enabled = rawGapSeconds <= certainThreshold;
   let reason: PhotoFinishReason | undefined = enabled ? 'actual' : undefined;
 
-  if (!enabled && rawGapSeconds <= dramaLimit && first && second) {
+  if (!enabled && dramaEnabled && rawGapSeconds <= dramaLimit && first && second) {
     const closeness = 1 - (rawGapSeconds - certainThreshold) / (dramaLimit - certainThreshold);
     const chance = Math.max(0, Math.min(0.42, closeness * 0.42));
     const key = `${first.horse_number}:${second.horse_number}:${first.raw_finish_at}:${second.raw_finish_at}`;
@@ -176,9 +292,13 @@ export function buildRacePresentation(results: any[], stages: any[]): RacePresen
     rawGapSeconds: Number.isFinite(rawGapSeconds) ? rawGapSeconds : 999,
     frameCount: 7,
   };
+  const { visualOffsets, dramaMoments } = buildVisualDrama(stages, dramaEnabled);
 
   return {
     photoFinish,
-    highlights: buildHighlights(stages, enabled),
+    highlights: buildHighlights(stages, enabled, dramaMoments),
+    dramaEnabled,
+    visualOffsets,
+    dramaMoments,
   };
 }

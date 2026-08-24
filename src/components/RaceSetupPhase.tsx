@@ -48,6 +48,7 @@ export default function RaceSetupPhase() {
     weather: roomSettings.weather || 'random',
     bettingTime: roomSettings.bettingTime || 60,
     courseFeature: roomSettings.courseFeature || 'random',
+    raceDrama: roomSettings.raceDrama !== false,
   });
 
   const resolveConfig = () => {
@@ -81,7 +82,14 @@ export default function RaceSetupPhase() {
       const { distance, fieldCondition, weather, courseFeature } = resolveConfig();
       const horsesWithOdds = await buildRace(cfg.horseCount, distance, fieldCondition, weather, roomSettings.realOdds);
       const raceName = generateRaceName(distance, weather);
-      const raceData = { race_name: raceName, distance, field_condition: fieldCondition, weather, course_feature: courseFeature };
+      const raceData = {
+        race_name: raceName,
+        distance,
+        field_condition: fieldCondition,
+        weather,
+        course_feature: courseFeature,
+        presentation_drama: cfg.raceDrama,
+      };
 
       const finalBettingTime = cfg.bettingTime || 120;
       const endTime = Date.now() + Math.max(10, finalBettingTime) * 1000;
@@ -95,6 +103,7 @@ export default function RaceSetupPhase() {
         weather: cfg.weather,
         courseFeature: cfg.courseFeature,
         bettingTime: finalBettingTime,
+        raceDrama: cfg.raceDrama,
       };
       useGameStore.getState().setRoomSettings(updatedSettings);
 
@@ -264,6 +273,29 @@ export default function RaceSetupPhase() {
             </div>
 
             {/* --- Additional Options --- */}
+            <div className="panel rounded-xl overflow-hidden border border-amber-400/20">
+              <div className="panel-header flex items-center justify-between">
+                <div>
+                  <span>レースの盛り上がりを追加する</span>
+                  <span className="ml-2 text-[9px] font-black text-amber-300">演出</span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="レースの盛り上がりを追加する"
+                  aria-pressed={cfg.raceDrama}
+                  onClick={() => setCfg({ ...cfg, raceDrama: !cfg.raceDrama })}
+                  className={`w-12 h-6 rounded-full p-1 transition-colors ${cfg.raceDrama ? 'bg-amber-500' : 'bg-gray-700'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${cfg.raceDrama ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <div className="px-4 pb-3">
+                <p className="text-[10px] text-gray-500">
+                  レースにドラマを追加します。結果に影響は一切ありません
+                </p>
+              </div>
+            </div>
+
             <div className="panel rounded-xl overflow-hidden">
               <div className="panel-header flex items-center justify-between">
                 <span>リアルオッズ (低倍率設定)</span>

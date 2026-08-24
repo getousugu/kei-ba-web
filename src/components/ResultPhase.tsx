@@ -441,7 +441,8 @@ export default function ResultPhase() {
       distance: nextDistance,
       field_condition: nextFC,
       weather: nextWeather,
-      course_feature: nextCourseFeature
+      course_feature: nextCourseFeature,
+      presentation_drama: nextSettings.raceDrama !== false,
     };
 
     s.updateHorses(horsesWithOdds);

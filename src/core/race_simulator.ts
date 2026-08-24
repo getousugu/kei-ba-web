@@ -16,29 +16,29 @@ function gauss(mean: number, std: number): number {
 
 // ─── 定数（チューニングポイント） ───────────────────────────────────
 const DIVISOR        = 900;
-const LUCK_FACTOR    = 5.0;   // 12.0から5.0へ。ステータス重視へ引き戻し
-const LATE_LUCK_MULT = 1.4;   // 1.6から1.4へ
+const LUCK_FACTOR    = 2.2;   // 区間ごとの乱高下を抑え、能力・展開を主役にする
+const LATE_LUCK_MULT = 1.6;   // 終盤だけは少し振れ幅を残す
 const MAX_FATIGUE_IMPACT = 0.20;
 const DIST_APT_BASE  = 0.8;
 const DIST_APT_RATE  = 0.3;
 
 // 脚質ごとの速度カーブ [前半, 中盤, 移行期, 直線]
 const STYLE_CURVES: Record<string, [number, number, number, number]> = {
-  逃げ:   [1.025, 1.010, 0.960, 0.880], // 序盤をさらに抑えて、終盤の垂れを調整
-  先行:   [1.015, 1.015, 0.980, 0.940],
-  差し:   [0.985, 0.990, 1.020, 1.100],
-  追込:   [0.975, 0.980, 1.040, 1.180],
+  逃げ:   [1.018, 1.010, 0.995, 0.965],
+  先行:   [1.010, 1.008, 1.000, 0.985],
+  差し:   [0.993, 0.998, 1.012, 1.035],
+  追込:   [0.982, 0.990, 1.020, 1.055],
   暴れ馬: [1.000, 1.000, 1.000, 1.000],
 };
 
 // 直線でのburst倍率（脚質ごと）
 const BURST_SCALE: Record<string, number> = {
-  逃げ: 0.00, 先行: 0.10, 差し: 0.35, 追込: 0.55, 暴れ馬: 0.30,
+  逃げ: 0.06, 先行: 0.15, 差し: 0.30, 追込: 0.42, 暴れ馬: 0.30,
 };
 
 // 前半の疲労負荷（脚質ごと）
 const FRONT_LOAD: Record<string, number> = {
-  逃げ: 1.50, 先行: 1.20, 差し: 0.80, 追込: 0.50, 暴れ馬: 1.60,
+  逃げ: 1.18, 先行: 1.05, 差し: 0.92, 追込: 0.80, 暴れ馬: 1.35,
 };
 
 export class RaceSimulator {
@@ -56,6 +56,7 @@ export class RaceSimulator {
     const fieldCondition: string = raceData.field_condition ?? '良';
     const courseFeature: string  = raceData.course_feature  ?? '平坦';
     const weather: string        = raceData.weather         ?? '晴';
+    const presentationDrama: boolean = raceData.presentation_drama !== false;
 
     const simHorses = horsesData.map(hd => ({
       ...this._calcParams(hd.horse ?? hd, distance, fieldCondition, courseFeature),
@@ -120,7 +121,7 @@ export class RaceSimulator {
     }
 
     const results = this._calcFinalResults(simHorses, finishedAt, distance, fieldCondition);
-    const presentation = buildRacePresentation(results, stagesData);
+    const presentation = buildRacePresentation(results, stagesData, presentationDrama);
 
     return {
       stages:    stagesData,
@@ -247,8 +248,8 @@ export class RaceSimulator {
       const baseFatigueRate = 1.0 / expectedSteps;
       const frontLoad       = FRONT_LOAD[h.running_style] ?? 1.0;
       const paceFrontAdj    = isFront
-        ? (pace === 'ハイペース' ? 1.25 : pace === 'スローペース' ? 0.82 : 1.0)
-        : (pace === 'スローペース' ? 1.05 : 1.0);
+        ? (pace === 'ハイペース' ? 1.06 : pace === 'スローペース' ? 0.92 : 1.0)
+        : (pace === 'スローペース' ? 1.02 : 1.0);
       const wisdomSave = 1.0 - (h.wisdom - 50) / 500;
 
       let fatigueInc = baseFatigueRate * (
@@ -293,6 +294,15 @@ export class RaceSimulator {
       }
       styleMulti += staminaBonus;
 
+      // 短距離は前、長距離は後ろの脚をわずかに活かす。脚質へ勝率を
+      // 直接付与せず、移行期以降の走り方として小さく反映する。
+      if (phase === 'transition' || phase === 'sprint') {
+        const distanceProfile = Math.max(-0.8, Math.min(1.0, (distance - 2000) / 1000));
+        if (h.running_style === '逃げ') styleMulti -= distanceProfile * 0.004;
+        if (h.running_style === '差し') styleMulti += distanceProfile * 0.002;
+        if (h.running_style === '追込') styleMulti += distanceProfile * 0.005;
+      }
+
       // ── 疲労デバフ（全区間で連続的に適用） ──
       const fatigueImpact = h.fatigue * (1.0 - h.stamina / 200);
       styleMulti *= (1.0 - fatigueImpact * MAX_FATIGUE_IMPACT);
@@ -312,11 +322,11 @@ export class RaceSimulator {
 
       // ── burstボーナス（終盤、徐々に乗せる） ──
       let burstBonus = 0;
-      if (prog > 0.85) {
-        const t = (prog - 0.85) / 0.15;
+      if (prog > 0.78) {
+        const t = (prog - 0.78) / 0.22;
         const scale = BURST_SCALE[h.running_style] ?? 0;
         const effectiveBurst = (h.burst * 0.85) + (h.power * 0.15);
-        burstBonus = (effectiveBurst - 50) * scale * 0.008 * t;
+        burstBonus = (effectiveBurst - 50) * scale * 0.004 * t;
         const spurtProb = (h.burst / 1000) + (h.burst >= 70 ? (h.burst - 70) * 0.002 : 0);
         if (h.fatigue < 0.8 && Math.random() < spurtProb) {
           if ((si - (h.lastTriggered['last_spurt'] ?? -99)) >= 3) {
@@ -363,12 +373,12 @@ export class RaceSimulator {
       let paceMod = 1.0;
       if (pace === 'ハイペース') {
         paceMod = (phase === 'early' || phase === 'mid')
-          ? (isFront ? 1.04 : 0.97)
-          : (isFront ? 0.92 : 1.07);
+          ? (isFront ? 1.006 : 0.998)
+          : (isFront ? 0.995 : 1.005);
       } else if (pace === 'スローペース') {
         paceMod = (phase === 'early' || phase === 'mid')
-          ? 0.96
-          : (isFront ? 1.06 : 0.95);
+          ? 0.997
+          : (isFront ? 1.006 : 0.998);
       }
 
       // ── luck（直線は振れ幅大） ──
