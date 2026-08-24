@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import BettingPhase from './BettingPhase';
 import RacePhase from './RacePhase';
+import ResultPhase from './ResultPhase';
 import type { Bet } from '../core/odds_calculator';
 import {
   acknowledgeCentralSettlements,
@@ -37,6 +38,7 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
   const [recentResult, setRecentResult] = useState<CentralRace | null>(null);
   const raceIdRef = useRef<string | null>(null);
   const playedRaceIdsRef = useRef(new Set<string>());
+  const loadedResultIdsRef = useRef(new Set<string>());
   const syncingRef = useRef(false);
 
   const beginPlayback = useCallback((finished: CentralRace) => {
@@ -75,6 +77,13 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
         try {
           beginPlayback(await fetchCentralRace(pending.raceId, signal));
         } catch { /* 古い未確認結果は結果通知だけ表示する */ }
+      }
+      if (pending && nextStatus.serverTime - pending.createdAt >= 120_000 && !loadedResultIdsRef.current.has(pending.raceId)) {
+        try {
+          const finished = await fetchCentralRace(pending.raceId, signal);
+          loadedResultIdsRef.current.add(pending.raceId);
+          setRecentResult(finished);
+        } catch { /* 保存期限を過ぎた結果は次の同期で再試行する */ }
       }
 
       // 発走直後に受付対象が次レースへ切り替わっても、直前レースを必ず再生する。
@@ -176,12 +185,24 @@ export default function CentralRacecoursePhase({ playerName, onClose }: { player
         onComplete={() => { setRecentResult(playback.race); setPlayback(null); }}
       /></div>}
 
-      {!playback && (settlement || resultRace) && <div className="fixed inset-0 z-[110] grid place-items-center bg-black/80 p-5 backdrop-blur-md"><div className="w-full max-w-md rounded-[28px] border border-amber-300/25 bg-[#15171c] p-6 text-white shadow-2xl">
-        <div className="text-[9px] font-black tracking-[.25em] text-amber-500">RACE RESULT</div><h2 className="mt-1 text-2xl font-black">中央競馬 結果確定</h2>
-        <div className="mt-5 space-y-2">{(settlement?.details.results ?? resultRace?.simulation?.results ?? []).slice(0, 3).map((result, index) => <div key={result.horse_number} className="flex items-center gap-3 rounded-xl bg-white/[.04] p-3"><b className="w-8 text-xl text-amber-300">{index + 1}</b><span className="rounded bg-white px-2 py-1 font-black text-black">{result.horse_number}</span><b className="text-sm">{result.horse_name || resultRace?.horses.find((horse) => horse.horse_number === result.horse_number)?.name}</b></div>)}</div>
-        {settlement && <div className={`mt-4 rounded-xl p-4 text-center ${settlement.amount > 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-white/[.03] text-gray-400'}`}><div className="text-[10px] font-black">{settlement.amount > 0 ? '払戻金' : '今回は的中なし'}</div>{settlement.amount > 0 && <b className="text-2xl">+{settlement.amount.toLocaleString()}枚</b>}</div>}
-        <button onClick={() => settlement ? void acknowledge(settlement) : setRecentResult(null)} className="mt-5 w-full rounded-xl bg-amber-400 py-3 text-xs font-black text-black">次のレースへ</button>
-      </div></div>}
+      {!playback && resultRace && <div className="fixed inset-0 z-[110]"><ResultPhase central={{
+        raceData: {
+          distance: resultRace.conditions?.distance ?? resultRace.simulation?.distance ?? 2000,
+          field_condition: resultRace.conditions?.fieldCondition ?? resultRace.simulation?.field_condition ?? '良',
+          weather: resultRace.conditions?.weather ?? resultRace.simulation?.weather ?? '晴',
+          course_feature: resultRace.conditions?.courseFeature ?? resultRace.simulation?.course_feature ?? '平坦',
+          simulation: resultRace.simulation,
+        },
+        horses: resultRace.horses.map((horse) => ({
+          ...horse,
+          field_apt: { '良': 'C', '稍重': 'C', '重': 'C', '不良': 'C' },
+        })),
+        bets: (settlement?.details.bets ?? []).map((bet): Bet => ({ id: bet.id, bet_type: bet.betType, horse_numbers: bet.horseNumbers, amount: bet.amount })),
+        betDetails: (settlement?.details.bets ?? []).map((bet) => ({ id: bet.id, bet_type: bet.betType, horse_numbers: bet.horseNumbers, amount: bet.amount, isHit: bet.isHit, payout: bet.payout, payoutOdds: bet.payoutOdds })),
+        balance: me.balance,
+        payout: settlement?.amount ?? 0,
+        onNext: () => settlement ? acknowledge(settlement) : setRecentResult(null),
+      }}/></div>}
     </div>
   );
 }

@@ -1,12 +1,23 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { peerManager } from '../network/peerManager';
-import { oddsCalculator } from '../core/odds_calculator';
+import { oddsCalculator, type Bet } from '../core/odds_calculator';
 import { HORSE_COLORS } from '../core/constants';
 import { db, checkRetirement } from '../db/db';
 import RaceReplayModal from './RaceReplayModal';
 
 const MEDAL = ['🥇', '🥈', '🥉'];
+type GameState = ReturnType<typeof useGameStore.getState>;
+
+interface CentralResultAdapter {
+  raceData: NonNullable<GameState['raceData']>;
+  horses: GameState['horses'];
+  bets: Bet[];
+  betDetails: Array<Bet & { isHit: boolean; payout: number; payoutOdds: number }>;
+  balance: number;
+  payout: number;
+  onNext: () => void | Promise<void>;
+}
 
 /** 秒数を競馬のタイム形式 (m:ss.f) に変換する */
 function formatFinishTime(sec: number): string {
@@ -28,11 +39,17 @@ function generateRaceName(distance: number, weather: string): string {
   return `${prefix}${category}`;
 }
 
-export default function ResultPhase() {
+export default function ResultPhase({ central }: { central?: CentralResultAdapter } = {}) {
   const {
-    raceData, myBets, myCoins, role, horses, participants, rematchVotes,
+    raceData: roomRaceData, myBets: roomBets, myCoins: roomCoins, role: roomRole,
+    horses: roomHorses, participants, rematchVotes,
     win5Data, setWin5Data, roomCarryover, setRoomCarryover, setPhase
   } = useGameStore();
+  const raceData = central?.raceData ?? roomRaceData;
+  const myBets = central?.bets ?? roomBets;
+  const myCoins = central?.balance ?? roomCoins;
+  const role = central ? 'central' : roomRole;
+  const horses = central?.horses ?? roomHorses;
   const [totalPayout, setTotalPayout] = useState(0);
   const [paid, setPaid] = useState(false);
   const [myVote, setMyVote] = useState<'continue' | 'end' | null>(null);
@@ -45,6 +62,7 @@ export default function ResultPhase() {
   const results: any[] = simulation?.results || [];
 
   const hitDetails = useMemo(() => {
+    if (central) return central.betDetails;
     if (!results.length) return [];
     const first = results[0]?.horse_number;
     const second = results[1]?.horse_number;
@@ -69,16 +87,18 @@ export default function ResultPhase() {
       const payout = Math.floor(bet.amount * payoutOdds);
       return { ...bet, isHit, payout, payoutOdds };
     });
-  }, [myBets, results, horses]);
+  }, [central, myBets, results, horses]);
 
   // 写真判定を見届ける実績は、馬券を買っていない観戦者にも付与する。
   useEffect(() => {
+    if (central) return;
     if (simulation?.presentation?.photoFinish?.enabled) {
       useGameStore.getState().unlockTitle('photo_witness');
     }
-  }, [simulation?.presentation?.photoFinish?.enabled]);
+  }, [central, simulation?.presentation?.photoFinish?.enabled]);
 
   useEffect(() => {
+    if (central) return;
     if (paid || !hitDetails.length) return;
     const total = hitDetails.reduce((s, d) => s + d.payout, 0);
     setTotalPayout(total);
@@ -357,7 +377,7 @@ export default function ResultPhase() {
     }
 
     setPaid(true);
-  }, [hitDetails]);
+  }, [central, hitDetails]);
 
   const handleVote = (vote: 'continue' | 'end') => {
     if (myVote) return;
@@ -520,7 +540,8 @@ export default function ResultPhase() {
   };
 
   const totalBetAmount = myBets.reduce((s, b) => s + b.amount, 0);
-  const profit = totalPayout - totalBetAmount;
+  const displayedPayout = central?.payout ?? totalPayout;
+  const profit = displayedPayout - totalBetAmount;
   const contVotes = rematchVotes.continue.length;
   const endVotes = rematchVotes.end.length;
   const totalVoters = participants.filter(p => p.id !== 'host').length;
@@ -589,6 +610,13 @@ export default function ResultPhase() {
         >
           ▶ ハイライトをリプレイ
         </button>
+
+        {central && (
+          <button onClick={() => void central.onNext()}
+            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg transition-all active:scale-95">
+            次のレースへ
+          </button>
+        )}
 
         {/* Host actions */}
         {role === 'host' && (
@@ -693,9 +721,9 @@ export default function ResultPhase() {
 
           {/* ── Payout summary ── */}
           <div className="grid grid-cols-3 gap-3">
-            <div className={`panel rounded-xl p-4 flex flex-col items-center justify-center text-center ${totalPayout > 0 ? 'border-yellow-500/30 bg-yellow-500/10' : ''}`}>
+            <div className={`panel rounded-xl p-4 flex flex-col items-center justify-center text-center ${displayedPayout > 0 ? 'border-yellow-500/30 bg-yellow-500/10' : ''}`}>
               <div style={{ fontSize: 10 }} className="text-gray-400 font-black uppercase tracking-widest mb-2">結果</div>
-              {totalPayout > 0 ? (
+              {displayedPayout > 0 ? (
                 <>
                   <div className="font-black text-yellow-500 animate-pop-in" style={{ fontSize: 36, textShadow: '0 0 20px rgba(234, 179, 8, 0.3)' }}>的中！</div>
                   {hitDetails.some(d => d.payoutOdds >= 300) ? (
@@ -718,7 +746,7 @@ export default function ResultPhase() {
                 <div>
                   <div style={{ fontSize: 10 }} className="text-gray-500 font-bold mb-0.5 uppercase tracking-widest">払戻合計</div>
                   <div className="font-mono font-black text-white tabular" style={{ fontSize: 28 }}>
-                    {totalPayout.toLocaleString()}<span className="text-yellow-500 ml-1" style={{ fontSize: 18 }}>C</span>
+                    {displayedPayout.toLocaleString()}<span className="text-yellow-500 ml-1" style={{ fontSize: 18 }}>C</span>
                   </div>
                 </div>
                 <div className="pb-1 text-gray-700">|</div>
