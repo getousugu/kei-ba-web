@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import RaceRenderMock from './components/RaceRenderMock.tsx'
 import { initLocalPlayer, db } from './db/db.ts'
 import { useGameStore } from './store/gameStore.ts'
 
@@ -17,9 +18,11 @@ async function bootstrap() {
     }
   }
 
+  const isRenderMock = window.location.pathname.endsWith('/render-mock');
+
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      {isRenderMock ? <RaceRenderMock /> : <App />}
     </StrictMode>
   )
 }
