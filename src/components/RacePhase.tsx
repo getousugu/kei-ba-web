@@ -398,7 +398,11 @@ export default function RacePhase() {
         addLog('📷 1着・2着は写真判定となります', 'photo');
       } else {
         const hData = horsesRef.current.find(h => h.horse_number === winner.hn);
-        const finishLines = CommentaryGenerator.generateFinish(winner, hData?.popularity || 1);
+        const finishLines = CommentaryGenerator.generateFinish(
+          winner,
+          hData?.popularity || 1,
+          Number(sim.results?.[1]?.raw_gap_seconds ?? 999),
+        );
         finishLines.forEach((text, i) => {
           setTimeout(() => {
             setTelop(text);

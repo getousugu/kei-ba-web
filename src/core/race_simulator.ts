@@ -128,6 +128,10 @@ export class RaceSimulator {
       events:    eventsAll,
       pace,
       base_time: this._baseTime(distance, fieldCondition),
+      distance,
+      field_condition: fieldCondition,
+      course_feature: courseFeature,
+      weather,
       presentation,
     };
   }
@@ -509,6 +513,8 @@ export class RaceSimulator {
       events,
       sorted_horses: sorted.map((x, i) => ({
         horse_number: x.hn,
+        horse_name: simHorses.find(horse => horse.horse_number === x.hn)?.horse_name,
+        jockey_name: simHorses.find(horse => horse.horse_number === x.hn)?.jockey_name,
         position:     i + 1,
         progress:     Math.min(1.0, x.p),
       })),

@@ -71,6 +71,13 @@ export default function ResultPhase() {
     });
   }, [myBets, results, horses]);
 
+  // 写真判定を見届ける実績は、馬券を買っていない観戦者にも付与する。
+  useEffect(() => {
+    if (simulation?.presentation?.photoFinish?.enabled) {
+      useGameStore.getState().unlockTitle('photo_witness');
+    }
+  }, [simulation?.presentation?.photoFinish?.enabled]);
+
   useEffect(() => {
     if (paid || !hitDetails.length) return;
     const total = hitDetails.reduce((s, d) => s + d.payout, 0);
@@ -163,6 +170,31 @@ export default function ResultPhase() {
 
     // Conditional Unlocks
     if (sessionWins > 0) s.unlockTitle('first_win');
+    const isPhotoFinish = !!simulation?.presentation?.photoFinish?.enabled;
+    if (isPhotoFinish && sessionWins > 0) s.unlockTitle('photo_sniper');
+
+    if (hitDetails.some(d => d.isHit && d.bet_type === '3連単')) {
+      s.unlockTitle('trifecta_master');
+    }
+
+    const hitBetTypes = new Set(hitDetails.filter(d => d.isHit).map(d => d.bet_type));
+    if (hitBetTypes.size >= 3) s.unlockTitle('clean_sweep');
+
+    const winnerNumber = results[0]?.horse_number;
+    const middleStage = (simulation?.stages || []).reduce((nearest: any, stage: any) => {
+      const progress = Number(stage.sorted_horses?.[0]?.progress || 0);
+      if (!nearest) return stage;
+      const nearestProgress = Number(nearest.sorted_horses?.[0]?.progress || 0);
+      return Math.abs(progress - 0.5) < Math.abs(nearestProgress - 0.5) ? stage : nearest;
+    }, null);
+    const middleRank = middleStage?.sorted_horses?.find(
+      (horse: any) => horse.horse_number === winnerNumber
+    )?.position;
+    const backedWinner = hitDetails.some(
+      d => d.isHit && d.bet_type === '単勝' && d.horse_numbers[0] === winnerNumber
+    );
+    if (backedWinner && Number(middleRank) >= 7) s.unlockTitle('comeback_believer');
+
     if (newStats.maxPayoutOdds >= 1000) s.unlockTitle('miracle');
     else if (newStats.maxPayoutOdds >= 300) s.unlockTitle('super_manbaken');
     else if (newStats.maxPayoutOdds >= 100) s.unlockTitle('manbaken');

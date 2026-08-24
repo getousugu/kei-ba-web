@@ -240,17 +240,20 @@ export class CommentaryGenerator {
       "🏁 決着！！勝利の女神はどの馬に微笑んだのか！！",
       "🏁 入線！！全馬、持てる力を出し切りました！！",
       "🏁 感動のフィニッシュ！歴史に残る名勝負が決着しました！！",
-      "🏁 どっちだーっ！！際どい決着！写真判定か！！",
-      "🏁 捉えたか！残ったか！わずかに{name}かーっ！！",
       "🏁 叫びたくなるような名勝負！今、決着！！",
-      "🏁 1点を見つめるような大接戦！勝ったのは…！？",
       "🏁 ゴール板を駆け抜けた！歓喜の瞬間、今ここに！！",
       "🏁 大歓声の中、決着！歴史が塗り替えられました！！",
-      "🏁 並んだところがゴール！これは分からない、大激戦だ！！",
       "🏁 ゴール！最後まで諦めなかった馬が、笑顔でゴールを駆け抜けた！！",
       "🏁 全力を出し切ったゴール！この感動を誰と分かち合いますか！！",
       "🏁 入線！夢か現か、信じられない結末がここに待っていた！！",
       "🏁 駆け抜けた！全馬が心を燃やして、この瞬間のために走ってきた！！"
+    ],
+    GOAL_CLOSE: [
+      "🏁 捉えたか、残ったか！わずかな差でゴール！！",
+      "🏁 二頭が並ぶように入線！最後まで息の抜けない決着です！！",
+      "🏁 ゴール前は大接戦！勝負を分けたのはほんのわずか！！",
+      "🏁 クビの上げ下げで決着！見応えのある攻防でした！！",
+      "🏁 最後の一完歩まで競り合った！際どいフィニッシュです！！"
     ],
     WINNER: [
       "🥇 勝ったのは{name}！！見事な勝利です！！",
@@ -390,6 +393,49 @@ export class CommentaryGenerator {
       "⚔️ 息詰まる攻防！{name}、絶対に譲らないという気迫が伝わる！！",
       "⚔️ 頭の上げ下げ！肉眼では判断できないほどの大接戦！！"
     ],
+    PACK_TIGHT: [
+      "🧲 馬群がぎゅっと凝縮した！少しの判断ミスが命取りになります！！",
+      "🧲 前から後ろまで差がない！一頭動けば全馬が動く緊張状態です！！",
+      "🧲 密集したまま勝負どころへ！進路取りが大きな鍵になりそうです！！",
+      "🧲 馬群はひとかたまり。各騎手、仕掛ける場所を探しています！！",
+      "🧲 互いに牽制し合う一団！この均衡を誰が最初に破るのか！！"
+    ],
+    PACK_STRETCHED: [
+      "📏 縦長の展開になった！前を追う各馬には厳しい流れです！！",
+      "📏 馬群が大きく伸びています！前と後ろで別のレースのようだ！！",
+      "📏 先行集団と後続が離れた！追走勢はここから差を詰めたい！！",
+      "📏 隊列は縦長！前の組は自分たちのリズムで運んでいます！！"
+    ],
+    LEADER_PRESSURE: [
+      "🎯 先頭に後続がぴたりと迫る！息を入れる暇を与えません！！",
+      "🎯 逃げる{name}に強烈なプレッシャー！背後にはもうライバルがいる！！",
+      "🎯 先頭は楽ではない！後続が射程圏に入れて圧力をかけ続ける！！",
+      "🎯 マークが厳しい！{name}は自分のペースを守れるでしょうか！！"
+    ],
+    REAR_CHARGE: [
+      "🚄 後方から{name}が一気に順位を上げた！馬群の空気が変わります！！",
+      "🚄 来た！{name}が後ろから何頭もまとめてかわしていく！！",
+      "🚄 {name}が大外から急浮上！前の各馬も無視できません！！",
+      "🚄 伏兵{name}が馬群を縫って進出！これは新たな火種だ！！"
+    ],
+    FRONT_FADING: [
+      "📉 先ほどまで先頭だった{name}が後退！前の流れが崩れ始めました！！",
+      "📉 {name}の脚色が鈍った！後続が一斉に襲いかかります！！",
+      "📉 前を引っ張った{name}が苦しい！レースの構図が一変した！！",
+      "📉 逃げ込みを図った{name}、ここで捕まる！新しい先頭争いです！！"
+    ],
+    THREE_WAY: [
+      "⚔️ 三頭がほとんど横一線！誰も引かない激しい主導権争い！！",
+      "⚔️ 先頭三頭は差がない！一完歩ごとに形勢が変わります！！",
+      "⚔️ 三つ巴だ！内・中・外からそれぞれが先頭を狙う！！",
+      "⚔️ 上位三頭が固まった！ここからは気持ちの強さも問われます！！"
+    ],
+    FAVORITE_SURROUNDED: [
+      "🚧 1番人気{name}は馬群の中！進路を見つけられるでしょうか！！",
+      "🚧 注目の{name}、前後を囲まれて動きづらい位置です！！",
+      "🚧 {name}は包まれたか！人気馬にとって嫌な形になりました！！",
+      "🚧 1番人気{name}に試練！この密集から抜け出せるか！！"
+    ],
     CROWD_ROAR: [
       "🔊 スタンドからは地鳴りのような大歓声！！",
       "🔊 場内の熱気が最高潮に達しています！！",
@@ -439,13 +485,12 @@ export class CommentaryGenerator {
       "⚠️ これが暴れ馬！{name}が突然気性を爆発させた！どうなるか分からない！！"
     ],
     INTERFERENCE: [
-      "💢 おっと！{name}、他馬と接触か！？大きな不利を受けた！！",
-      "💢 厳しい！{name}、進路をカットされたか！立て直せるか！？",
+      "💢 おっと！{name}、前が詰まった！立て直せるか！？",
+      "💢 厳しい！{name}、進路を探している間に少し後退！！",
       "💢 前が壁になった！{name}、行き場を失って大きく後退！！",
-      "💢 あーっと、{name}がバランスを崩した！他馬の影響を受けたようです！！",
-      "💢 {name}、馬場に脚を取られたか！？急激に失速！！",
-      "💢 厳しい展開！{name}、スタミナ切れか足取りが重い！！",
-      "💢 コース取りに失敗！{name}、外に膨らんでロスが出た！！",
+      "💢 {name}、馬群の中で動けない！これは痛いロスです！！",
+      "💢 進路が狭い！{name}、いったん手綱を控えました！！",
+      "💢 コース取りが難しい！{name}、前をさばけるでしょうか！！",
       "💢 痛恨！{name}が包まれた！抜け出せるか！？",
       "💢 進路なし！{name}、身動きが取れない状況に追い込まれた！！"
     ],
@@ -549,10 +594,20 @@ export class CommentaryGenerator {
 
   public static generate(stageIdx: number, sim: any, horses: any[], finishedHNs: Set<number> = new Set(), sessionWins: Record<number, number> = {}, lastWinnerHN: number | null = null): string[] {
     const stage = sim.stages[stageIdx];
+    if (!stage) return [];
     const events = stage.events || [];
     const lines: string[] = [];
+    const order = stage.sorted_horses || [];
+    const previous = sim.stages[Math.max(0, stageIdx - 1)];
+    const previousRanks = new Map<number, number>((previous?.sorted_horses || []).map((horse: any) => [horse.horse_number, horse.position]));
+    const leaderProgress = Number(order[0]?.progress || 0);
+    const leadGap = order.length > 1 ? Number(order[0].progress) - Number(order[1].progress) : 1;
+    const topThreeGap = order.length > 2 ? Number(order[0].progress) - Number(order[2].progress) : 1;
+    const fieldSpread = order.length > 1 ? Number(order[0].progress) - Number(order[order.length - 1].progress) : 0;
+    const horseData = (horseNumber: number) => horses.find(horse => horse.horse_number === horseNumber);
 
-    // 1. フェーズごとの基本実況
+    // Stage names are iteration labels, not course positions. Only the opening
+    // uses stage indices; every later call is driven by real progress/rank gaps.
     if (stageIdx === 0) {
       if (sim.weather === "雨") lines.push(this.pick("RAIN"));
       if (sim.weather === "晴") lines.push(this.pick("SUNNY"));
@@ -565,99 +620,88 @@ export class CommentaryGenerator {
     } else if (stageIdx === 1) {
       const paceKey = sim.pace === "ハイペース" ? "PACE_HI" : sim.pace === "スローペース" ? "PACE_LOW" : "PACE_MID";
       lines.push(this.pick(paceKey));
-      
-      const leader = stage.sorted_horses[0];
-      const leaderData = horses.find(h => h.horse_number === leader?.horse_number);
+      const leader = order[0];
+      const leaderData = horseData(leader?.horse_number);
       if (leaderData && !finishedHNs.has(leader.horse_number)) lines.push(this.pick("LEADER", { name: leaderData.name, jockey: leaderData.jockey_name }));
-    } else if (stage.stage_name === "middle") {
-      lines.push(this.pick("MIDDLE"));
-      const leader = stage.sorted_horses[0];
-      const second = stage.sorted_horses[1];
-      const leaderData = horses.find(h => h.horse_number === leader?.horse_number);
-      const secondData = horses.find(h => h.horse_number === second?.horse_number);
-      if (leaderData && secondData && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
-        if (Math.random() > 0.5) {
-          lines.push(`${leaderData.name}が依然として先頭！ピッタリと${secondData.name}がマークする！`);
-        } else {
-          if (stage.sorted_horses.length > 3) {
-            const mid = stage.sorted_horses[Math.floor(stage.sorted_horses.length / 2)];
-            const midData = horses.find(h => h.horse_number === mid?.horse_number);
-            if (midData && !finishedHNs.has(mid.horse_number)) {
-              lines.push(this.pick("CHASING", { name: midData.name, jockey: midData.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
-            }
-          }
-        }
-      }
-    } else if (stage.stage_name === "corner3") {
-      lines.push(this.pick("CORNER3"));
-    } else if (stage.stage_name === "final_corner") {
-      lines.push(this.pick("FINAL_CORNER"));
-    } else if (stage.stage_name === "homestretch_early" || stage.stage_name === "homestretch_final") {
-      if (Math.random() > 0.3) lines.push(this.pick("HOMESTRETCH"));
-      if (Math.random() > 0.7) lines.push(this.pick("CROWD_ROAR"));
-    } else if (stageIdx % 2 === 0 && stageIdx < sim.stages.length - 2) {
-      const leader = stage.sorted_horses[0];
-      const second = stage.sorted_horses[1];
-      const leaderData = horses.find(h => h.horse_number === leader?.horse_number);
-      const secondData = horses.find(h => h.horse_number === second?.horse_number);
-      if (leaderData && secondData && !finishedHNs.has(leader.horse_number) && !finishedHNs.has(second.horse_number)) {
-        const r = Math.random();
-        if (r > 0.6) {
-          lines.push(`${leaderData.name}が依然として先頭！ピッタリと${secondData.name}がマークする！`);
-        } else {
-          if (stage.sorted_horses.length > 3) {
-            const mid = stage.sorted_horses[Math.floor(stage.sorted_horses.length / 2)];
-            const midData = horses.find(h => h.horse_number === mid?.horse_number);
-            if (midData && !finishedHNs.has(mid.horse_number)) {
-              lines.push(this.pick("CHASING", { name: midData.name, jockey: midData.jockey_name, pos: (Math.floor(stage.sorted_horses.length / 2) + 1).toString() }));
-            }
-          }
-        }
+    } else if (stageIdx % 2 === 0 && leaderProgress < 0.98) {
+      const previousLeader = previous?.sorted_horses?.[0];
+      const previousLeaderNow = order.find((horse: any) => horse.horse_number === previousLeader?.horse_number);
+      const mover = order
+        .map((horse: any) => ({ horse, gain: (previousRanks.get(horse.horse_number) || horse.position) - horse.position }))
+        .filter((item: any) => item.gain >= 3 && item.horse.position <= 6)
+        .sort((a: any, b: any) => b.gain - a.gain)[0];
+      const leader = horseData(order[0]?.horse_number);
+      const formerLeader = horseData(previousLeader?.horse_number);
+      const moverData = horseData(mover?.horse?.horse_number);
+      const favorite = horses.find(horse => horse.popularity === 1);
+      const favoriteRank = order.find((horse: any) => horse.horse_number === favorite?.horse_number)?.position;
+
+      if (leaderProgress >= 0.55 && topThreeGap <= 0.012) {
+        lines.push(this.pick("THREE_WAY"));
+      } else if (leaderProgress >= 0.48 && previousLeaderNow?.position >= 4 && formerLeader) {
+        lines.push(this.pick("FRONT_FADING", { name: formerLeader.name }));
+      } else if (moverData) {
+        lines.push(this.pick("REAR_CHARGE", { name: moverData.name, jockey: moverData.jockey_name }));
+      } else if (leaderProgress >= 0.25 && leadGap <= 0.006 && leader) {
+        lines.push(this.pick("LEADER_PRESSURE", { name: leader.name }));
+      } else if (favorite && favoriteRank >= 4 && favoriteRank <= 8 && fieldSpread <= 0.09) {
+        lines.push(this.pick("FAVORITE_SURROUNDED", { name: favorite.name }));
+      } else if (leaderProgress >= 0.30 && fieldSpread >= 0.13) {
+        lines.push(this.pick("PACK_STRETCHED"));
+      } else if (leaderProgress >= 0.20 && fieldSpread <= 0.075) {
+        lines.push(this.pick("PACK_TIGHT"));
       }
     }
 
-    // 2. イベント実況
-    events.forEach((ev: CommentaryEvent) => {
-      if (finishedHNs.has(ev.horse_number)) return;
-
-      const stageHorse = stage.sorted_horses.find((h: any) => h.horse_number === ev.horse_number);
-      const rank = stageHorse?.position ?? 10;
-      
-      // スタミナ切れ実況は上位5頭のみ（スパム防止）
-      if (ev.type === "stamina_depleted" || ev.type === "stamina_fading") {
-         if (rank >= 6) return;
-      }
-
-      if (ev.type === "good_start") lines.push(this.pick("GOOD_START", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "bad_start") lines.push(this.pick("BAD_START", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "last_spurt") lines.push(this.pick("LAST_SPURT", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "wild_explosion") lines.push(this.pick("WILD_EXPLOSION", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "wild_control_lost") lines.push(this.pick("WILD_CONTROL_LOST", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "interference") lines.push(this.pick("INTERFERENCE", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "breakthrough") lines.push(this.pick("BREAKTHROUGH", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "corner_boost") lines.push(this.pick("CORNER_BOOST", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "guts_display") lines.push(this.pick("GUTS", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "stamina_depleted") lines.push(this.pick("STAMINA_DEPLETED", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "stamina_fading") lines.push(this.pick("STAMINA_FADING", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "hana_arasoi") lines.push(this.pick("HANA_ARASOI", { name: ev.horse_name, jockey: ev.jockey_name }));
-      if (ev.type === "overtake") lines.push(this.pick("OVERTAKE", { name: ev.horse_name, target: ev.target_name }));
-      if (ev.type === "leader_change") lines.push(this.pick("LEADER_CHANGE", { name: ev.horse_name }));
-      if (ev.type === "lead_big") lines.push(this.pick("LEAD_BIG", { name: ev.horse_name }));
-      if (ev.type === "lead_close") lines.push(this.pick("LEAD_CLOSE", { name: ev.horse_name }));
-      if (ev.type === "pos_up") lines.push(this.pick("POS_UP", { name: ev.horse_name, jockey: ev.jockey_name }));
+    const eventPriority: Record<string, number> = {
+      bad_start: 100, wild_explosion: 95, leader_change: 90, corner_boost: 85,
+      last_spurt: 80, breakthrough: 75, pos_up: 70, interference: 65,
+      guts_display: 60, stamina_depleted: 58, hana_arasoi: 55,
+      wild_control_lost: 52, good_start: 45, overtake: 40,
+    };
+    const eventKey: Record<string, string> = {
+      good_start: "GOOD_START", bad_start: "BAD_START", last_spurt: "LAST_SPURT",
+      wild_explosion: "WILD_EXPLOSION", wild_control_lost: "WILD_CONTROL_LOST",
+      interference: "INTERFERENCE", breakthrough: "BREAKTHROUGH", corner_boost: "CORNER_BOOST",
+      guts_display: "GUTS", stamina_depleted: "STAMINA_DEPLETED", stamina_fading: "STAMINA_FADING",
+      hana_arasoi: "HANA_ARASOI", overtake: "OVERTAKE", leader_change: "LEADER_CHANGE", pos_up: "POS_UP",
+    };
+    const eventFitsProgress = (event: CommentaryEvent) => {
+      if (event.type === 'good_start' || event.type === 'bad_start') return leaderProgress <= 0.18;
+      if (event.type === 'hana_arasoi') return leaderProgress <= 0.25;
+      if (event.type === 'corner_boost') return leaderProgress >= 0.48 && leaderProgress <= 0.88;
+      if (['last_spurt', 'wild_explosion', 'guts_display'].includes(event.type)) return leaderProgress >= 0.65;
+      if (['stamina_depleted', 'stamina_fading'].includes(event.type)) return leaderProgress >= 0.35;
+      return true;
+    };
+    const selectedEvents = events
+      .filter((event: CommentaryEvent) => !finishedHNs.has(event.horse_number) && eventKey[event.type] && eventFitsProgress(event))
+      .filter((event: CommentaryEvent) => {
+        if (!['stamina_depleted', 'stamina_fading'].includes(event.type)) return true;
+        return (order.find((horse: any) => horse.horse_number === event.horse_number)?.position || 99) <= 5;
+      })
+      .sort((a: CommentaryEvent, b: CommentaryEvent) => (eventPriority[b.type] || 0) - (eventPriority[a.type] || 0))
+      .filter((event: CommentaryEvent, index: number, list: CommentaryEvent[]) => list.findIndex(item => item.type === event.type && item.horse_number === event.horse_number) === index)
+      .slice(0, 2);
+    selectedEvents.forEach((event: CommentaryEvent) => {
+      lines.push(this.pick(eventKey[event.type], {
+        name: event.horse_name,
+        jockey: event.jockey_name,
+        target: event.target_name || '前の馬',
+      }));
     });
 
-    // 3. 人気馬への言及
-    if (stageIdx >= 2 && stageIdx % 2 === 0) {
+    // Popularity commentary now requires an actual rank change.
+    if (stageIdx >= 2 && stageIdx % 2 === 0 && lines.length < 3) {
       const favorite = horses.find(h => h.popularity === 1);
       if (favorite && !finishedHNs.has(favorite.horse_number)) {
-        const stageHorse = stage.sorted_horses.find((h: any) => h.horse_number === favorite.horse_number);
+        const stageHorse = order.find((h: any) => h.horse_number === favorite.horse_number);
         if (stageHorse) {
           const rank = stageHorse.position;
-          const r = Math.random();
-          if (rank <= 3 && r > 0.5) {
+          const previousRank = previousRanks.get(favorite.horse_number) || rank;
+          if (rank <= 3 && previousRank - rank >= 2) {
             lines.push(this.pick("FAVORITE_MOVE", { name: favorite.name, jockey: favorite.jockey_name }));
-          } else if (rank > 6 && r > 0.5) {
+          } else if (rank > 6 && rank - previousRank >= 2) {
             lines.push(this.pick("FAVORITE_STRUGGLE", { name: favorite.name, jockey: favorite.jockey_name }));
           }
         }
@@ -686,12 +730,12 @@ export class CommentaryGenerator {
       }
     }
 
-    return lines;
+    return lines.slice(0, 4);
   }
 
-  public static generateFinish(winner: any, popularity: number = 1): string[] {
+  public static generateFinish(winner: any, popularity: number = 1, gapSeconds: number = 999): string[] {
     const lines: string[] = [];
-    lines.push(this.pick("GOAL"));
+    lines.push(this.pick(gapSeconds <= 0.35 ? "GOAL_CLOSE" : "GOAL"));
     lines.push(this.pick("WINNER", { name: winner.name, jockey: (winner as any).jockey_name }));
     if (popularity >= 5) {
       lines.push(this.pick("UPSET"));
